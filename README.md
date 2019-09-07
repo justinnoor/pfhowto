@@ -1,12 +1,12 @@
-# How to Configure PF on a FreeBSD 12.1 Digital Ocean Droplet
+# How to Configure PF on a FreeBSD 12.1 Digital Ocean Droplet Draft
 
 ### Introduction
 
-Networks are hostile places. Every organization is confronted by this reality unless they are completely offline, and have no internal threats. The firewall is arguably one of the most important lines of defense in the realm of network security. The ability to configure a firewall from scratch is an empowering skill that enables the administrator take control of their networks.
+Networks are hostile places. Every organization will face this reality unless they are completely offline and internally secure. The firewall is arguably one of the most important lines of defense in the realm of network security. The ability to configure a firewall from scratch is an empowering skill that enables the administrator take control of their networks.
 
 In this tutorial we build a firewall from the ground up on a FreeBSD 12.01 droplet using [PF](https://man.openbsd.org/pf), a renown packet filtering application that is maintained by the [OpenBSD](https://www.openbsd.org) project. [PF](https://man.openbsd.org/pf) is part of the FreeBSD base system, and is a foundational tool in the world of Unix administration. It is known for its simple-syntax, user-friendliness, and astonishing power.
 
-This lesson is *not* a command reference. Instead we will build a working ruleset that can be loaded on-demand when new droplets are created. We will build on this ruleset by progressing into advanced concepts such as preemptive defense, traffic shaping, redundancy, load balancing, and more. Command references can be found in the man pages is needed.
+This lesson is *not* a command reference. Instead we will build a working ruleset that can used as a formidable starting point for new FreeBSD droplets. We start with the simplest ruleset possible and progress into more advanced concepts such as proactive defense, bandwidth management, redundancy, and more.
 
 ## Goals
 
@@ -38,8 +38,6 @@ Obtain the ip address of the droplet from the [control panel](https://cloud.digi
 ```command
 ssh root@XXX.XXX.XX.XXX
 ```
-
-**FINISH THE INITIAL CONFIGURATION TUTORIAL!!!**
 
 ## Step 3 - Build a preliminary ruleset
 
@@ -163,16 +161,24 @@ If any packages need to be updated go ahead and update them. If these services a
 
 ## Step 4 - Introduce macros and lists
 
-In our preliminary ruleset above we hard coded our parameters into our rules, such as the port numbers and the ICMP parameter. This works for small rulesets, but will probably become hard to read as our ruleset expands. 
+In our preliminary ruleset above we hard coded our parameters into our rules, such as the port numbers and the ICMP parameter. This works for now, but will probably become unmanageable as our ruleset expands. For organizational purposes [PF](https://man.openbsd.org/pf) offers lists and macros, which allow us to conolidate all of our parameters. Readabiliy is a key responsibility of maintaining a ruleset.
 
+Let's egin by creating a macro for our network interface. On FreeBSD droplets the default interface on a single droplet is `vtnet0`. 
+
+Add this macro to the top of our ruleset:
+```super_user
+public_if = "vtnet0"
+```
+
+## Step 5 - Proactive defense
+
+## Step 6 - Bandwidth management
 
 ## Monitoring and logging
 
-In this step we cover the fundamentals of monitoring and logging, and discuss ways in which we can implement these tasks systematically.
-
 ## Conclusion
 
-
+## Links
 
 [bandwidth billing](https://www.digitalocean.com/docs/accounts/billing/bandwidth)
 
