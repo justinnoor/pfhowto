@@ -49,14 +49,14 @@ Create `/etc/pf.conf`:
 vim /etc/pf.conf
 ```
 
-[PF](https://man.openbsd.org/pf) filters packets with any of the following three actions: **block**, **pass**, or **match**. Actions are taken when the contents of the packet headers meet the criteria of the rules we write, and the parameters we specify.
+[PF](https://man.openbsd.org/pf) filters packets according to three core concepts: **block**, **pass**, and **match**. These actions are taken when the contents of a packet header meets the criteria of the rules we write, and the parameters we specify. We use the terms *action* or *rule* interchangeably when discussing **block**, **pass**, or **match**. The **pass** and **block** rules, as one might expect, pass and block traffic. When **match** is used, actions are taken on a packet without actually filtering them. For example we can perform network address translation (NAT) on a packet without passing or blocking it, or even after it has already been passed out of a local network and is headed for the egress interface. More examples of using **match** will be discussed below.
 
 We begin by blocking everything:
 ```
 block all
 ```
 
-This rule blocks all forms of traffic in either direction. Our **block** rule does not specify an **in** or **out** direction, therefore it defaults to both. The same logic applies to the **pass** and **match** actions.
+This rule blocks all forms of traffic in either direction. Our **block** rule does not specify an **in** or **out** direction, therefore it defaults to both. The same logic applies to the **pass** and **match** actions. 
 
 Our first rule is a perfectly legitimate for a local workstation that needs to be insulated from the world, however, it is impractical, and it will not work with a remote droplet. Can you guess why? The reason for this is that it does not permit **SSH** traffic. If we had loaded this rule when [PF](https://man.openbsd.org/pf) was enabled, it would have locked us out of our droplet. This is something to always keep in mind with remote machines. Every administrator has probably done this at least once!
 
@@ -247,7 +247,7 @@ pass out proto udp to port $udp_services
 pass out inet proto icmp icmp-type $icmp4_messages
 ```
 
-Now it's time to test our ruleset, and make a copy of it.
+Now it's time to test our ruleset, and make a copy of it. For the sake of tidiness, from here forward we will no longer rewrite the entire ruleset as we expand on it. We have placed our complete sample rulesets at the end of the tutorial. Feel free to look at them anytime.
 
 Use the `-nvf` flags to `pfctl` to take a dry run:
 ```super_user
@@ -349,7 +349,7 @@ echo "block in quick from XXX.XXX.XX.X" | pfctl -a rogue_host -f -
 
 Cryptography exploits, such as brute force or key search attacks, occur when attackers systematically decrypt passwords in order to access the system. These are often performed with a great deal of sophistication and effort, and usually succeed if the target machine uses weak passwords. In the strongest terms, we recommend using public-key authentication for accessing a droplet, which will exponentially reduce the risks of a cryptography exploit. However, even with public-key authentication, attackers or netbots can still be a nuisance, and key search attacks are not impossible. In addition to public-key authentication, we can use [PF](https://man.openbsd.org/pf)'s state monitoring capabilities to detect and deny forced entry attempts. We can also ban the attackers IP addresses from the network. 
 
-### Banning malicious IPs with PF's overload table
+### Banning malicious IPs with the overload table
 
 Create an empty table:
 
@@ -405,15 +405,84 @@ Add the following:
 
 Utilizing [PF](https://man.openbsd.org/pf)'s stateful tracking capabilities for mitigating hostile connections is a fine-tuned approach because it is based on [PF](https://man.openbsd.org/pf)'s state table entries, which are extremely robust. 
 
-## Step 8 - Monitoring and logging
+## Step 8 - Traffic shaping
+
+There may be times when we want to prioritize the traffic in order to manage bandwidth, or bump certain types of traffic in front of others. For example, a standard Digital Ocean droplet comes with 1000 GB per month of outward data transfer, therefore we want to be sure that we are spending it on the services we need the most. [PF](https://man.openbsd.org/pf) provides a feature known as a **queue** for distributing bandwidth, and another option called **prio** for prioritizing traffic flow.
+
+### Setting priorities with prio
+
+[PF](https://man.openbsd.org/pf)'s **prio** option prioritizes traffic according to a number range, 0 thru 7, with zero as the slowest, and seven as the fastest. In actuality, the [PF](https://man.openbsd.org/pf)'s priority queues are enabled by default with a value of 3. When we use the **prio** option we are really changing [PF](https://man.openbsd.org/pf)'s default value. Let's examine some options without actually adding them to our main ruleset.
+
+This rule speeds up inbound SSH traffic a knotch:
+```
+pass in proto tcp to port { 22 } set prio 4
+```
+
+This rule optimizes all web traffic:
+```
+pass proto tcp to port { 80 443 } set prio 7
+```
+
+This rule lowers priority for outbound name and time services:
+```
+pass out proto tcp to port { 53 123 } set prio 2
+```
+
+An important thing to understand about TCP connections is that they also send *acknowledgement* (ACK) packets which contain no data (*Google the 3-way handshake*). [PF](https://man.openbsd.org/pf) processes packets on a *first-come-first-serve* basis, therefore by default ACK packets have to wait in line with every other packet. This means that they have the potential to needlessly clog up the system, and should be moved along as quick as possible. Thankfully the **prio** option was designed with an utterly simple mechanism to deal with this.
+
+We can rewrite any of the rules above with a tuple:
+```
+pass proto tcp to port { 80 443 } set prio (6,7)
+```
+
+The first value of the tuple represents regular packets, and the second represents ACK packets. The last example speeds up web traffic with a priority of 6, and also assigns the highest priority to any affiliated ACK packets. Another performance enhancement provided by **prio**'s tuple option is that the second value also applies to packets with a *lowdelay* set in their *type of service* (TOS) field. Therefore our last rule delegates the highest possible priority to both ACK packets, and packets with *lowdelay* values in the TOS field.
+
+If TOS is an unfamiliar term, don't dwell on it too much for the moment. However, do research it when time permits because its part of the TCP/IP protocol suite. Every seasoned administrator will insist that we need to understand these protocols in order to succeed as developers.
+
+### Prioritizing traffic according to allocated bandwidth
+
+In the previous section we shaped our traffic according to its protocol with **prio**. This approach may not always meet our needs because it strictly reshuffles the order in which packets travel, without considering bandwidth usage. Bandwidth is a major concern for administrators for obvious reasons such as cost and network performance. [PF](https://man.openbsd.org/pf) provides a queuing mechanism that enables us to allocate bandwidth to specific services by placing their packets in a queue that is sized according to the amount of bandwidth that we specify. Queues will organizes our bandwidth usage, and also protects us from rogue applications because packets will be dropped if they overload a queue beyond its capacity.
+
+Let's pretend that we want to reserve the majority of our outward bandwidth for web services. Digital Ocean droplets provide 1000 GB/month of free outbound bandwidth transfers. We will create a queue named **main** that will allocate this amount to our network interface `vtnet0`. [PF](https://man.openbsd.org/pf) queues consist of parent-child-hierarchies, and their bandwidth allocations are defined in **K** *kilobits*, **M** *megabits*, or **G** *gigabits*, per second. We will use 200 megabits per second on our queue, which equates to roughly 1000 GB/month. We allocate 75% of our bandwith to a queue named **web**, and the rest to a queue named **catchall**. 
+
+Create the queue:
+```
+queue main on $ext_if bandwidth 200M
+    queue web parent main bandwidth 150M
+    queue defq parent main bandwidth 50M default
+```
+
+In reality, our bandwidth activity is not this uniform. Traffic spikes are inevitable and will have various affects on our queues. For example, a queue will steal from another queue if it has to because queues are greedy. This is particularly important for the parent queue because the child queues can . [PF](https://man.openbsd.org/pf) has some built-in tools that will help us mitigate these issues. We can put a cap on each queue with the **max** keyword, and also allow for traffic spikes with the **burst** keyword on our **web** queue. Even though we capped of the queues, they can still steal from eachother, just within a smaller range. We can fix that with the **min** keyword, which we will add to our **catchall** queue.
+
+Here's the updated queue:
+```
+queue main on $ext_if bandwidth 200M
+    queue web parent main bandwidth 150M max 150M burst 200M 100ms
+    queue catchall parent main bandwidth 50M min 25M max 50M default
+```
+
+We can also have subqueues:
+```
+queue main on $ext_if bandwidth 200M
+    queue web parent main bandwidth 150M max 150M burst 200M 100ms
+        queue developers parent web bandwidth 50M
+    queue catchall parent main bandwidth 50M min 15M max 50M default
+```
+
+Now the queues can be added to any **pass out** rule in our main ruleset:
+```
+pass out proto tcp to port { 80 443 } set queue web set prio (6,7)
+``
+
+## Step 9 - Monitoring and logging
 
 Our firewall is of little use to us if we can't see what it's doing. Since [PF](https://man.openbsd.org/pf) filters packets at the kernel-level, we have a number options. Here we will discuss the essentials of monitoring and logging.
 
 
+## Step 10 - Redundancy and load balancing: the hidden gems of PF (optional)
 
-### Misc links
 
-[bandwidth billing](https://www.digitalocean.com/docs/accounts/billing/bandwidth)
+
 
 
 
