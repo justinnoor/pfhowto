@@ -439,47 +439,60 @@ The first value of the tuple represents regular packets, and the second represen
 
 If TOS is an unfamiliar term, don't dwell on it too much for the moment. However, do research it when time permits because its part of the TCP/IP protocol suite. Every seasoned administrator will insist that we need to understand these protocols in order to succeed as developers.
 
-### Prioritizing traffic according to allocated bandwidth
+### Prioritizing traffic according to bandwidth allocatiions
 
-In the previous section we shaped our traffic according to its protocol with **prio**. This approach may not always meet our needs because it strictly reshuffles the order in which packets travel, without considering bandwidth usage. Bandwidth is a major concern for administrators for obvious reasons such as cost and network performance. [PF](https://man.openbsd.org/pf) provides a queuing mechanism that enables us to allocate bandwidth to specific services by placing their packets in a queue that is sized according to the amount of bandwidth that we specify. Queues will organizes our bandwidth usage, and also protects us from rogue applications because packets will be dropped if they overload a queue beyond its capacity.
+For outward traffic, the **prio** option may not always be the best option because it strictly reshuffles the order in which packets are filtered. We may want to process outward traffic in relation to the amount of bandwidth that is available on a network interface. Bandwidth is a limited resource that has major ramifications for operational costs and network performance. There is always the possibility that a rogue service could squander it all away.
 
-Let's pretend that we want to reserve the majority of our outward bandwidth for web services. Digital Ocean droplets provide 1000 GB/month of free outbound bandwidth transfers. We will create a queue named **main** that will allocate this amount to our network interface `vtnet0`. [PF](https://man.openbsd.org/pf) queues consist of parent-child-hierarchies, and their bandwidth allocations are defined in **K** *kilobits*, **M** *megabits*, or **G** *gigabits*, per second. We will use 200 megabits per second on our queue, which equates to roughly 1000 GB/month. We allocate 75% of our bandwith to a queue named **web**, and the rest to a queue named **catchall**. 
+Let's assume that we want the majority of our outward bandwidth to be reserved for web services. Digital Ocean droplets provide 1000 GB/month of free outward data transfers. We can create a queue that allocates this amount to our network interface `vtnet0`. [PF](https://man.openbsd.org/pf) queues are trees with root-parent-child hierarchies. There can be mulitple parents within a root queue, or the root queue itself can be the parent, as with our example. Every interface must also have one **default** queue, which will be explained below. Bandwidth is specified in kilobits **K**, megabits **M**, or gigabits **G**, *per second*. Let's create a root queue named **rootq**, with two child queues named **web** and **catchall**. 
 
 Create the queue:
 ```
-queue main on $ext_if bandwidth 200M
-    queue web parent main bandwidth 150M
-    queue defq parent main bandwidth 50M default
+queue rootq on $ext_if bandwidth 200M
+    queue web parent rootq bandwidth 150M
+    queue catchall parent rootq bandwidth 50M default
 ```
 
-In reality, our bandwidth activity is not this uniform. Traffic spikes are inevitable and will have various affects on our queues. For example, a queue will steal from another queue if it has to because queues are greedy. This is particularly important for the parent queue because the child queues can . [PF](https://man.openbsd.org/pf) has some built-in tools that will help us mitigate these issues. We can put a cap on each queue with the **max** keyword, and also allow for traffic spikes with the **burst** keyword on our **web** queue. Even though we capped of the queues, they can still steal from eachother, just within a smaller range. We can fix that with the **min** keyword, which we will add to our **catchall** queue.
+We've allocated 150M of **rootq**'s bandwidth to its child **web**, and the remainder to its other child **catchall**. In reality, bandwidth activity is never as uniform as it appears in our queue allocations. Queues will borrow bandwidth from eachother during traffic spikes, which can potentially hinder the availability of a service. Thankfully [PF](https://man.openbsd.org/pf) provides us with some options to control this.
 
-Here's the updated queue:
+Let's revise the queue:
 ```
-queue main on $ext_if bandwidth 200M
-    queue web parent main bandwidth 150M max 150M burst 200M 100ms
-    queue catchall parent main bandwidth 50M min 25M max 50M default
+queue rootq on $ext_if bandwidth 200M max 200M
+    queue web parent rootq bandwidth 150M
+    queue catchall parent rootq bandwidth 50M min 15M max 50M burst 75M for 100ms default
 ```
+
+We added a **max** keyword to both **rootq** and **catchall** so that they do not exceed their allocations through borrowing. We do not add the **max** keyword to the **web** queue because web services are the top priority. Since our **web** queue is essentially left unchecked, chances are it will borrow from **catchall**. For this reason we used the **min** keyword with **catchall** to ensure that it always has at least 15M of bandwidth available at all times. Furthermore, we added the **burst** keyword to **catchall**, which allows it to exceed its 50M allocation temporarily in the event of a traffic spike.  Finally, we make **catchall** our **default** queue, which directs all packets there by default unless there is a rule that says otherwise. Despite the nuances and quirks involved with bandwidth queues, in the end they are a benefit to our networks.
 
 We can also have subqueues:
 ```
-queue main on $ext_if bandwidth 200M
-    queue web parent main bandwidth 150M max 150M burst 200M 100ms
-        queue developers parent web bandwidth 50M
-    queue catchall parent main bandwidth 50M min 15M max 50M default
+queue rootq on $ext_if bandwidth 200M max 200M
+    queue web parent rootq bandwidth 100M
+        queue developers parent web bandwidth 50M max 50M
+    queue catchall parent rootq bandwidth 50M min 15M max 50M burst 100M for 100ms default
 ```
 
-Now the queues can be added to any **pass out** rule in our main ruleset:
+Now the queues can be added to their corresponding rules in the main ruleset:
 ```
 pass out proto tcp to port { 80 443 } set queue web set prio (6,7)
 ``
 
+Notice we coupled the **queue** option with the **prio** option because we can do that! This means we will have some pretty darn fast http traffic!
+
 ## Step 9 - Monitoring and logging
 
-Our firewall is of little use to us if we can't see what it's doing. Since [PF](https://man.openbsd.org/pf) filters packets at the kernel-level, we have a number options. Here we will discuss the essentials of monitoring and logging.
+Our firewall is of little use if we cannot see what it's doing. All of this is pointless unless we can analyze our network traffic and utilze our findings to make policy decisions. Logging with [PF](https://man.openbsd.org/pf) is done on a psuedo-device known as the **pflog** interface, which we enabled in our `rc.conf` file at the beginning of the lesson. We generate glogs by running [tcpdump(8)](https://man.openbsd.org/tcpdump.8) against the **pflog** interface. There are also some third party options, including graphical ones, which we will discuss below.
+
+
 
 
 ## Step 10 - Redundancy and load balancing: the hidden gems of PF (optional)
+
+
+
+
+
+
+
 
 
 
