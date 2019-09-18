@@ -171,7 +171,7 @@ Add the following to the top of the ruleset:
 ext_if = "vtnet0"
 tcp_services= "{ 22 53 80 123 443 }"
 udp_services= "{ 53 123 }"
-icmp_messages= "{ echoreq }"
+icmp_messages= "{ echoreq unreach }"
 ```
 
 Now we can add the variables to our rules, making our ruleset significantly easier read. Notice we also added a macro for our network interface **vtnet0**, which is the default interface on a singleton Digital Ocean droplet.
@@ -229,7 +229,7 @@ Here is our complete base ruleset:
 ext_if = "vtnet0"
 tcp_services= "{ 22 53 80 123 443 }"
 udp_services= "{ 53 123 }"
-icmp4_messages= "{ echoreq }"
+icmp4_messages= "{ echoreq unreach }"
 table <rfc6890> { 0.0.0.0/8 10.0.0.0/8 100.64.0.0/10 127.0.0.0/8 169.254.0.0/16          \
                   172.16.0.0/12 192.0.0.0/24 192.0.0.0/29 192.0.2.0/24 192.88.99.0/24    \
                   192.168.0.0/16 198.18.0.0/15 198.51.100.0/24 203.0.113.0/24            \
@@ -244,7 +244,7 @@ block all
 pass in proto tcp to port { 22 }
 pass out proto tcp to port $tcp_services
 pass out proto udp to port $udp_services
-pass out inet proto icmp icmp-type $icmp4_messages
+pass inet proto icmp icmp-type $icmp4_messages
 ```
 
 Now it's time to test our ruleset, and make a copy of it. For the sake of tidiness, from here forward we will no longer rewrite the entire ruleset as we expand on it. We have placed our complete sample rulesets at the end of the tutorial. Feel free to look at them anytime.
@@ -279,15 +279,14 @@ If there are any packages to update, go ahead and do that.
 
 
 ## Step 6 - Introduce anchors
-
-[PF](https://man.openbsd.org/pf) provides **anchors**, which are defined as *containers* that hold rules, tables, and even other anchors. Using an **anchor** is a clever way to source rules into the main ruleset, either on-the-fly with `pfctl`, or with an external text file. Let's demonstrate this using our <rf6890> addresss table. Instead of placing our table at the top of our ruleset, we'll place it in an external file, along with the corresponding filtering rules.
+[PF](https://man.openbsd.org/pf) provides **anchors**, which are defined as *containers* that hold rules, tables, and even other anchors. Using an **anchor** is a clever way to source rules into the main ruleset, either on-the-fly with `pfctl`, or with an external text file. Let's demonstrate this with table <rf6890>. Instead of placing table <rfc6890> at the top of the ruleset, we use a text file.
 
 Create the file **/etc/non_routes**:
 ```super_user
 vim /etc/non_routes
 ```
 
-Add the following rules:
+Transfer the following rules:
 ```
 ext_if = "vtnet0"
 
@@ -300,32 +299,22 @@ block in quick on $ext_if from <rfc6890>
 block return out quick on egress to <rfc6890>
 ```
 
-The above code is taken directly from our main ruleset. We can now remove that code from the main ruleset, except for the $ext_if macro, which needs to exist in both. Now these rules can be called from an anchor. We'll name the anchor rfc6890, however it can be given any name. We already have a copy of the original ruleset, so we will modify `/etc.pf.conf` directly.
-
-Our `/etc/pf.conf/ now looks like this:
+The above rules can be removed from the main ruleset (except for the $ext_if macro). Now we call these rules from a text file named `/etc/non_routes`. We name the anchor non-routes_anchor as it cannot have the same name as the file.
 
 ```
 *--snip--*
 set skip on lo0
 scrub in
 antispoof quick for $ext_if
-anchor rfc6890
-load anchor rfc6890 from "/etc/non_routes"
+anchor non-routes_anchor
+load anchor non-routes_anchor from "/etc/non_routes"
 block all
 *--snip--*
 ```
 
-Reload the ruleset with the verbose flag:
-```super_user
-pfctl -vf /etc/pf.conf
-```
+One really intelligent feature of anchors is their ability to insert rules manually into running ruleset without reloading them. This can be useful for testing, quick-fixes, emergencies, etc.
 
-Make a copy of that:
-```super_user
-cp /etc/pf.conf /etc/pf.conf.anchor1
-```
-
-One really intelligent feature of anchors is their ability to be used on-the-fly without reloading the main ruleset. This is useful for testing, dealing with a rogue host, and many other scenarios. For example we can an anchor *below* our **block all** rule.
+Add an anchor *below* the **block all** rule:
 ```
 *--snip--*
 set skip on lo0
@@ -338,16 +327,18 @@ anchor rogue_host
 *--snip--*
 ```
 
-Now we can implement rules on-the-fly using the anchor name with the `pfctl` utility from the command-line, without reloading the ruleset. For example we can block all traffic from a remote host that it acting strange.
+Rules can now be added manually on-the-fly with the `pfctl` utility from the command-line. For example we can block all traffic from a remote host that it acting strange.
 
 Block a remote host:
 ```super_user
 echo "block in quick from XXX.XXX.XX.X" | pfctl -a rogue_host -f -
 ```
 
+There are many pros and cons to using anchors, all of them are completely situational. Anchors may help reduce clutter in a ruleset by breaking it up into separate text files, however, managing multiple files might be cumbersome and hard to read. Anchors can be useful for adding rules on-the-fly, however, someone has to be present to add those rules. In other scenarios anchors are necessary for third party tools that are designed to integrate with [PF](https://man.openbsd.org/pf).
+
 ## Step 7 - Defending against cryptography exploits
 
-Cryptography exploits, such as brute force or key search attacks, occur when attackers systematically decrypt passwords in order to access the system. These are often performed with a great deal of sophistication and effort, and usually succeed if the target machine uses weak passwords. In the strongest terms, we recommend using public-key authentication for accessing a droplet, which will exponentially reduce the risks of a cryptography exploit. However, even with public-key authentication, attackers or netbots can still be a nuisance, and key search attacks are not impossible. In addition to public-key authentication, we can use [PF](https://man.openbsd.org/pf)'s state monitoring capabilities to detect and deny forced entry attempts. We can also ban the attackers IP addresses from the network. 
+Cryptography exploits, such as brute force or key search attacks, occur when attackers systematically decrypt passwords in order to access the system. These are often performed with a great deal of sophistication and effort, and usually succeed if the target machine has weak passwords. In the strongest terms, we recommend using public-key authentication on all droplets. Even with public-key authentication, attackers or netbots can still be a nuisance, and key search attacks are not impossible. We can prevent these types of attacks with [PF](https://man.openbsd.org/pf)'s state monitoring capabilities, which can detect and deny forced entry attempts, and ban the attackers IP addresses from the network. 
 
 ### Banning malicious IPs with the overload table
 
@@ -355,27 +346,29 @@ Create an empty table:
 
 table <blackhats> persist
 
-The **persist** keyword allows us to maintain empty tables. Don't worry about it too much for now, just know that it needs to be there. Next we modify our **pass in** rule for SSH traffic so that the number of simultaneous, or rapid, connections it receives is closely monitored. For example if port 22 receives 100 login attempts in 10 seconds, it is likely a brute force attack.
+The **persist** keyword allows us to maintain empty tables. Next we modify our **pass in** rule for SSH traffic so that the number of permissible simultaneous connections it significantly reduced and considered a crypto attack. For example if port 22 receives 100 failed login attempts in 10 seconds, it is likely a brute force attack, and the source IP should be banned from the system.
 
 Modify the rule:
 ```
 pass in proto tcp to port { 22 } \
-    keep state (max-src-conn 10, max-src-conn-rate 6/3, \
+    keep state (max-src-conn 10, max-src-conn-rate 3/1, \
         overload <blackhats> flush global)
 ```
 
-These are nothing more than a few of [PF](https://man.openbsd.org/pf)'s stateful tracking options. The **max-src-conn 10** and **max-src-conn-rate 6/3** options drastically reduce the number of connections that can be made by a single host. If these options are exceeded, the **overload** option will perform its magic by uploading the source address of the attacker to the <blackhats> table. The **flush global** option will immediately drop the connection. We then create attacker's IP address is black-listed from the network until we remove it from the <blackhats> table. Refer to the [man pages](https://man.openbsd.org/pf.conf.5#STATEFUL_FILTERING) to better understand these options.
+The **max-src-conn 10** option permits only 10 simultaneous connections from a single host. The **max-src-conn-rate 3/1** option will only allow 3 new connections per second from a single host. If these options are exceeded, the **overload** option will add the source address to the <blackhats> table, where it will be banned until we remove it (from the table). Finally, the **flush global** option immediately drops the connection.
 
-Over time the <blackhats> table might grow considerably over time. We can periodically clear the <blackhats> table with `pfctl` to avoid wasting memory. The above command will delete addresses from the <blackhats> table that have been in the table for 48 hours (172800 seconds).
+We have enforced strict measures on our SSH traffic for good reason, however, these restrictions are not suitable for every type of service. When our servers get overloaded with connections, it is not always an attacker. It could be a random web service that was dynamically assigned an IP address. Blocking it may or may not make sense, depending on the circumstances. Additional overload tables should be created for services that can afford liberal connection policies.
 
-Clear the <blackhats> table:
+Over time the overload tables grow and should be cleared. It is not likely that an attacker will continue using the same IP address so it is non-sensical to keep them in the table forever. We can clear our overload <blackhats> table with `pfctl`.
+
+Clear IPs that are 48 hours old:
 ```super_user
 pfctl -t blackhats -T expire 172800
 ```
 
-We can also automate this with **cron**, FreeBSD's job scheduler, which uses shell scripts to run **cron jobs**. These are configured in what are known as **crontabs**, which can be thought of as configuration files. Let's run the `pfctl` command everday at midnight with a **cron job**.
+We can also automate this with **cron**, FreeBSD's job scheduler, which is typically used for maintanence tasks. The **cron** scheduler uses shell scripts to perform jobs, which are called from configuration files known as **crontabs**. Let's create a **cron job** that runs everyday at midnight, that will remove IP addresses that are 48 hours old from the overload <blackhats> table.
 
-Create a shell script:
+Create the shell script:
 ```super_user
 vim /usr/local/bin/clear_overload.sh
 ```
@@ -402,48 +395,47 @@ Add the following:
 \# minute	hour	mday	month	wday	command
 \   *		0	*	*	*	/usr/local/bin/clear_overflow.sh
 
-
-Utilizing [PF](https://man.openbsd.org/pf)'s stateful tracking capabilities for mitigating hostile connections is a fine-tuned approach because it is based on [PF](https://man.openbsd.org/pf)'s state table entries, which are extremely robust. 
-
 ## Step 8 - Traffic shaping
 
-There may be times when we want to prioritize the traffic in order to manage bandwidth, or bump certain types of traffic in front of others. For example, a standard Digital Ocean droplet comes with 1000 GB per month of outward data transfer, therefore we want to be sure that we are spending it on the services we need the most. [PF](https://man.openbsd.org/pf) provides a feature known as a **queue** for distributing bandwidth, and another option called **prio** for prioritizing traffic flow.
+Packets are processes on a first-come-first-serve basis, which doesn't always work. There are times when we want to process certain packets before others, or ensure that certain packets do not waste our bandwidth. [PF](https://man.openbsd.org/pf) provides the **queue** option for managing bandwidth, and the **prio** option for prioritizing packets.
 
-### Setting priorities with prio
+### Shaping traffic with prio
 
-[PF](https://man.openbsd.org/pf)'s **prio** option prioritizes traffic according to a number range, 0 thru 7, with zero as the slowest, and seven as the fastest. In actuality, the [PF](https://man.openbsd.org/pf)'s priority queues are enabled by default with a value of 3. When we use the **prio** option we are really changing [PF](https://man.openbsd.org/pf)'s default value. Let's examine some options without actually adding them to our main ruleset.
+The **prio** option prioritizes traffic according to a number range, 0 thru 7, with zero being the slowest, and seven the fastest. [PF](https://man.openbsd.org/pf)'s priority queues are actually enabled by default with a value of 3, therfore, when we use the **prio** option we are actually changing [PF](https://man.openbsd.org/pf)'s default value. Let's experiment with **prio** without actually adding these options to our main ruleset.
 
-This rule speeds up inbound SSH traffic a knotch:
+This rule prioritizes inward SSH traffic a knotch:
 ```
 pass in proto tcp to port { 22 } set prio 4
 ```
 
-This rule optimizes all web traffic:
+This rule optimizes web traffic:
 ```
 pass proto tcp to port { 80 443 } set prio 7
 ```
 
-This rule lowers priority for outbound name and time services:
+This rule lowers priority for outward name and time services:
 ```
 pass out proto tcp to port { 53 123 } set prio 2
 ```
 
-An important thing to understand about TCP connections is that they also send *acknowledgement* (ACK) packets which contain no data (*Google the 3-way handshake*). [PF](https://man.openbsd.org/pf) processes packets on a *first-come-first-serve* basis, therefore by default ACK packets have to wait in line with every other packet. This means that they have the potential to needlessly clog up the system, and should be moved along as quick as possible. Thankfully the **prio** option was designed with an utterly simple mechanism to deal with this.
+It is important to understand that TCP connections also send *acknowledgement* (ACK) packets which contain no data (*Google the 3-way handshake*), therefore, by default ACK packets have to wait in line with every other packet. This means that they have the potential to clog up the system, and should be moved along as quick as possible. Thankfully the **prio** option was designed with this in mind and provides an utterly simple mechanism to deal with this.
 
 We can rewrite any of the rules above with a tuple:
 ```
 pass proto tcp to port { 80 443 } set prio (6,7)
 ```
 
-The first value of the tuple represents regular packets, and the second represents ACK packets. The last example speeds up web traffic with a priority of 6, and also assigns the highest priority to any affiliated ACK packets. Another performance enhancement provided by **prio**'s tuple option is that the second value also applies to packets with a *lowdelay* set in their *type of service* (TOS) field. Therefore our last rule delegates the highest possible priority to both ACK packets, and packets with *lowdelay* values in the TOS field.
+The first value of the tuple represents regular packets, and the second represents ACK packets. We speed up web traffic with a priority of 6, and also assign the highest priority to any affiliated ACK packets. In addition, the second value of the tuple is also designed to prioritze packets with a *lowdelay* set in their *type of service* (TOS) field. Therefore the value 7 applies to ACK packets, and packets with a *lowdelay* in their TOS field.
 
-If TOS is an unfamiliar term, don't dwell on it too much for the moment. However, do research it when time permits because its part of the TCP/IP protocol suite. Every seasoned administrator will insist that we need to understand these protocols in order to succeed as developers.
+If TOS is an unfamiliar term, don't dwell on it too much for the moment. However, do research it when time permits because its part of the TCP/IP protocol suite. Every seasoned administrator will insist that we need to understand these protocols in order to be successful developers.
 
-### Prioritizing traffic according to bandwidth allocatiions
+### Shaping traffic with queue
 
-For outward traffic, the **prio** option may not always be the best option because it strictly reshuffles the order in which packets are filtered. We may want to process outward traffic in relation to the amount of bandwidth that is available on a network interface. Bandwidth is a limited resource that has major ramifications for operational costs and network performance. There is always the possibility that a rogue service could squander it all away.
+The **prio** option on its own may not always suffice because it strictly reshuffles the order in which packets are filtered. It may be necessary to confine certain packets to a specified amount of bandwidth because it is a limited resource that is expensive, and has a major ramifications for network performance. We can accomplish this with [PF](https://man.openbsd.org/pf)'s **queue** option.
 
-Let's assume that we want the majority of our outward bandwidth to be reserved for web services. Digital Ocean droplets provide 1000 GB/month of free outward data transfers. We can create a queue that allocates this amount to our network interface `vtnet0`. [PF](https://man.openbsd.org/pf) queues are trees with root-parent-child hierarchies. There can be mulitple parents within a root queue, or the root queue itself can be the parent, as with our example. Every interface must also have one **default** queue, which will be explained below. Bandwidth is specified in kilobits **K**, megabits **M**, or gigabits **G**, *per second*. Let's create a root queue named **rootq**, with two child queues named **web** and **catchall**. 
+Let's assume we want to reserve the majority of our outward bandwidth for web services. Digital Ocean droplets provide 1000 GB/month of free outward data transfers. We can create a queue that allocates this amount to our network interface `vtnet0`. This is not a perfect representation of our total bandwidth activity, however, it gives us a decent amount of control, and also protects us from rogue applications.
+
+[PF](https://man.openbsd.org/pf) queues are trees with root-parent-child hierarchies. There can be mulitple parents within a root queue, or the root queue itself can be the parent, as with our example. Every interface must also have one **default** queue, which will be shown below. Bandwidth is specified in kilobits **K**, megabits **M**, or gigabits **G**, *per second*. Let's create a root queue named **rootq**, with two child queues named **web** and **catchall**. 
 
 Create the queue:
 ```
@@ -452,7 +444,7 @@ queue rootq on $ext_if bandwidth 200M
     queue catchall parent rootq bandwidth 50M default
 ```
 
-We've allocated 150M of **rootq**'s bandwidth to its child **web**, and the remainder to its other child **catchall**. In reality, bandwidth activity is never as uniform as it appears in our queue allocations. Queues will borrow bandwidth from eachother during traffic spikes, which can potentially hinder the availability of a service. Thankfully [PF](https://man.openbsd.org/pf) provides us with some options to control this.
+We've allocated 150M of **rootq**'s bandwidth to its child **web**, and the remainder to its other child **catchall**. In reality, bandwidth activity is never as uniform as it appears in our queue allocations. Queues will borrow bandwidth from eachother during traffic spikes, which can potentially hinder the availability of a service. Thankfully [PF](https://man.openbsd.org/pf) provides some options to control this.
 
 Let's revise the queue:
 ```
@@ -461,7 +453,7 @@ queue rootq on $ext_if bandwidth 200M max 200M
     queue catchall parent rootq bandwidth 50M min 15M max 50M burst 75M for 100ms default
 ```
 
-We added a **max** keyword to both **rootq** and **catchall** so that they do not exceed their allocations through borrowing. We do not add the **max** keyword to the **web** queue because web services are the top priority. Since our **web** queue is essentially left unchecked, chances are it will borrow from **catchall**. For this reason we used the **min** keyword with **catchall** to ensure that it always has at least 15M of bandwidth available at all times. Furthermore, we added the **burst** keyword to **catchall**, which allows it to exceed its 50M allocation temporarily in the event of a traffic spike.  Finally, we make **catchall** our **default** queue, which directs all packets there by default unless there is a rule that says otherwise. Despite the nuances and quirks involved with bandwidth queues, in the end they are a benefit to our networks.
+We added a **max** keyword to both **rootq** and **catchall** so that they do not exceed their allocations through borrowing. We do not add the **max** keyword to the **web** queue because web services are the top priority. Since our **web** queue is essentially left unchecked, chances are it will borrow from **catchall**. For this reason we used the **min** keyword with **catchall** to ensure that it always has at least 15M of bandwidth available at all times. We also added the **burst** keyword to **catchall**, which allows it to exceed its 50M allocation temporarily in the event of a traffic spike.  Finally, we make **catchall** our **default** queue so that if a packets has no matching rule, it will automatically be sent there. Despite the nuances and quirks involved with bandwidth management, in the end we will benefit from using queues.
 
 We can also have subqueues:
 ```
@@ -480,23 +472,204 @@ Notice we coupled the **queue** option with the **prio** option because we can d
 
 ## Step 9 - Monitoring and logging
 
-Our firewall is of little use if we cannot see what it's doing. All of this is pointless unless we can analyze our network traffic and utilze our findings to make policy decisions. Logging with [PF](https://man.openbsd.org/pf) is done on a psuedo-device known as the **pflog** interface, which we enabled in our `rc.conf` file at the beginning of the lesson. We generate glogs by running [tcpdump(8)](https://man.openbsd.org/tcpdump.8) against the **pflog** interface. There are also some third party options, including graphical ones, which we will discuss below.
+Our firewall is of little use if we cannot see what it is doing. Policy decisions in network security are highly dependent on packet analyses, which inevitably invloves examining log files. With [PF](https://man.openbsd.org/pf), logging occurs on a psuedo-device known as the **pflog** interface, which can be viewed with `ifconfig`. Since it is an interface, various userland tools can be used to access the data that it logs. The default interface is **pflog0**, and it is possible to create multiple log interfaces by creating a **hostname** file. For example to create a **pflog1** interface, we would create a `/etc/hostname.pflog1` file containing only the `up` command. We would then enable it in `/etc/rc.conf` with `pflog1_enable="YES"`.
 
+To create logs we add the **log** keyword to any of our rules. [PF](https://man.openbsd.org/pf) will only log what we tell it to. Once the rules are enacted, [PF](https://man.openbsd.org/pf) makes copies of the packet headers, writing them to `/var/log/pflog` in binary format.
 
+### Accessing log data with tcpdump
+
+There are multiple ways to access [PF](https://man.openbsd.org/pf) log data, but few tools are capable of generating the level of detail that can be achieved with [tcpdump(8)](https://man.openbsd.org/tcpdump.8), which is part of the FreeBSD base system.
+
+We begin by logging what's most important to us because logging everything will become unwieldly. We certainly want to know who is SSH-ing into our droplet. This is a rule that we will actually add to our main ruleset.
+
+Add the **log** keyword to our SSH rule:
+```
+pass in log proto tcp to port { 22 }
+```
+
+Reload the ruleset:
+```command
+sudo pfctl -f /etc/pf.conf
+```
+
+Now we should see some log data:
+```command
+sudo tcpdump -ner /var/log/pflog
+```
+
+You can also save it to a file:
+```command
+sudo tcpdump -ner /var/log/pflog > ssh_log
+```
+
+We can also view the logs in real-time directly from the `pflog0` interface. For a single droplet with no network activity, a terminal multiplexer might be required on the remote workstation, such as **tmux**. For example, we could SSH into the droplet on one terminal, initiate real-time logging, then SSH into the droplet on another terminal, and we should see this in real-time.
+
+Initiate real-time logging:
+```command
+sudo tcpdump -nei pflog0
+```
+
+There is a wealth of information on how to use **tcpdump**, which is an extensive tool that has been strongly supported for many decades. Using **tcpdump** effectively requires us to determine exactly what we want to know about our packets, and how we want view them in the log files.
+
+### Labeling Pf's state table entries
+
+It is possible to tag packets for troubleshooting and organizational purposes.
+
+Tag our SSH rule:
+```
+pass in proto tcp to port { 22 } tag SSH
+```
+
+Any packet that matches the above rule will be tagged with "SSH". The tag will act as a marker, making it easier to identify packets when logging, troubleshooting, etc.
+
+### Accecssing log files with pftop (recommended)
+
+The **pftop** utility is an excellent tool for quickly viewing active states and rules in real-time. It is named after the well known **top** utility due to its similarities.
+
+Install **pftop**
+```command
+sudo pkg istall pftop
+```
+
+Run **pftop**
+```command
+sudo pftop
+```
+
+It will display something like this:
+```
+PR    DIR SRC                   DEST                           STATE                AGE       EXP   PKTS BYTES
+tcp   In  251.155.237.90:27537  157.225.173.58:22     ESTABLISHED:ESTABLISHED  00:12:35  23:59:55   1890  265K
+tcp   In  222.186.42.15:25884   157.225.173.58:22       TIME_WAIT:TIME_WAIT    00:01:25  00:00:06     22  3801
+tcp   In  222.185.15.217:17359  157.225.173.58:22       TIME_WAIT:TIME_WAIT    00:00:14  00:01:17     22  3801
+udp   Out 157.245.171.59:4699   67.203.62.5:53           MULTIPLE:SINGLE       00:00:14  00:00:16      2   227
+```
+
+### Viewing graphical representations with pfstat (optional)
+
+Often times we need graphical representations of our packet filtering to show clients, colleagues, or maybe the boss. The **pfstat** utility is a lightweight tool that is perfect for this. The way it works is that it populates a `/var/db/pfstat.db` database with data that it collects from `/dev/pf`. This is usually done continuously with a **cron** job, but can also be done manually from the command-line. We tell **pfstat** what we want to store in the database in the `/usr/local/etc/pfstat.conf` configuration file. We can then translate the data into graphs that are stored in either **jpg** or **png** image formats.
+
+Unfortunately, with a single fresh droplet we do not have much data to work with, but we'll try our best! For demonstration purposes we'll make a simple graph that shows us how many packets have passed, and how many have been blocked.
+
+Install pfstat:
+```command
+sudo pkg install pfstat
+```
+
+Create the configuration file:
+```command
+sudo vim /usr/local/etc/pfstat.conf
+```
+
+Add the following:
+```
+collect 1 = interface "vtnet0" pass packets in ipv4 diff
+collect 2 = interface "vtnet0" block packets in ipv4 diff
+
+image "/home/myuser/pfstat.jpg" {
+        from 7 days to now
+        width 300 height 200
+	left
+            graph 1 "pass in" "packets/s" color 0 192 0
+	right
+            graph 2 "block in" "packets/s" color 0 0 255
+}
+```
+
+Create the cron job:
+```command
+sudo crontab -e
+```
+
+Add the following entries:
+```
+\*	*	*	*	*	/usr/local/bin/pfstat -q
+
+0	0	1	*	*	/usr/local/bin/pfstat -t 30:180
+```
+
+The database should now exist at `/var/db/pfstat.db`
+
+The above entries will populate the database continuously. Now that we have automated the process the database will continue to grow. For obvious reasons our database will grow, so we periodically clear it out in the second entry using the **-t** flag. The additional syntax for the **-t** flag are two values that both represent days. The first value deletes uncompressed images from the database that are 30 days old, and the second deletes compressed images that are 180 days old.
+
+Generate a graph image:
+```
+sudo pfstat -p
+```
+
+Xorg is required to view graphical images. Since we have no intention of installing **Xorg**, or even forwarding X sessions to our droplet, we will copy the image from the droplet to our remote workstation using **scp**.
+
+Copy the image to the remote workstation:
+```command 
+sudo scp myuser@XXX.XXX.XX.XX:pfstat.jpg /home/myuser
+```
+
+As mentioned, there's a strong chance that nothing will appear on the graph because we're working on a fresh droplet. We can try flooding the server with ping to generate some packets. With ping we can pass an **-f** flag and let it run for a minute or so. The server should block all of those ping requests.
+
+Flood the server with ping:
+```super_user
+sudo ping -f XXX.XXX.XX.XX
+```
+
+Copy the image again:
+```command 
+sudo scp myuser@XXX.XXX.XX.XX:pfstat.jpg /home/myuser
+```
+
+The image should now show some graphical data.
 
 
 ## Step 10 - Redundancy and load balancing: the hidden gems of PF (optional)
 
 
 
+## Sample rulesets
 
+### Sample ruleset 1
+```
+ext_if = "vtnet0"
+tcp_services= "{ 22 53 80 123 443 }"
+udp_services= "{ 53 123 }"
+icmp4_messages= "{ echoreq unreach }"
+table <rfc6890> { 0.0.0.0/8 10.0.0.0/8 100.64.0.0/10 127.0.0.0/8 169.254.0.0/16          \
+                  172.16.0.0/12 192.0.0.0/24 192.0.0.0/29 192.0.2.0/24 192.88.99.0/24    \
+                  192.168.0.0/16 198.18.0.0/15 198.51.100.0/24 203.0.113.0/24            \
+                  240.0.0.0/4 255.255.255.255/32 }
 
+set skip on lo0
+scrub in
+antispoof quick for $ext_if
+block in quick on $ext_if from <rfc6890> 
+block return out quick on egress to <rfc6890>
+block all
+pass in log proto tcp to port { 22 } tag SSH
+pass out proto tcp to port $tcp_services
+pass out proto udp to port $udp_services
+pass inet proto icmp icmp-type $icmp4_messages
+```
 
+### Sample ruleset 2
+```
+ext_if = "vtnet0"
+tcp_services= "{ 22 53 80 123 443 }"
+udp_services= "{ 53 123 }"
+icmp4_messages= "{ echoreq unreach }"
+table <rfc6890> { 0.0.0.0/8 10.0.0.0/8 100.64.0.0/10 127.0.0.0/8 169.254.0.0/16          \
+                  172.16.0.0/12 192.0.0.0/24 192.0.0.0/29 192.0.2.0/24 192.88.99.0/24    \
+                  192.168.0.0/16 198.18.0.0/15 198.51.100.0/24 203.0.113.0/24            \
+                  240.0.0.0/4 255.255.255.255/32 }
 
-
-
-
-
+set skip on lo0
+scrub in
+antispoof quick for $ext_if
+block in quick on $ext_if from <rfc6890> 
+block return out quick on egress to <rfc6890>
+block all
+pass in log proto tcp to port { 22 } tag SSH
+pass out proto tcp to port $tcp_services
+pass out proto udp to port $udp_services
+pass inet proto icmp icmp-type $icmp4_messages
+```
 
 
 
