@@ -1,4 +1,4 @@
-# How to Configure PF on a FreeBSD 12.1 Digital Ocean Droplet Part 1 (1ST DRAFT)
+# How to Configure PF on a FreeBSD 12.0 Digital Ocean Droplet (FIRST DRAFT)
 
 ### Introduction
 
@@ -13,7 +13,7 @@ This lesson is *not* a command reference. It is designed to help you get started
 * A Unix-like workstation (BSD, Linux, or Mac)
 * A [cloud-firewall](https://www.digitalocean.com/docs/networking/firewalls/quickstart) that only permits inbound SSH traffic. Refer to this [quickstart guide](https://www.digitalocean.com/docs/networking/firewalls/quickstart).
 * An [SSH keypair](https://www.digitalocean.com/docs/droplets/how-to/add-ssh-keys/to-account) with a copy of the public key uploaded to your account
-* A standard 1G FreeBSD 12.01 droplet in the region of choice, either ZFS or UFS
+* A standard 1G FreeBSD 12.0 droplet in the region of choice, either ZFS or UFS.
 
 ## Step 1 - Create the droplet
 
@@ -27,10 +27,10 @@ Upon creating our droplet we have no firewall enabled, therefore we risk being i
 
 Obtain the ip address of the droplet from the [control panel](https://cloud.digitalocean.com/login) and SSH into it:
 ```command
-ssh root@XXX.XXX.XX.XXX
+ssh myuser@XXX.XXX.XX.XXX
 ```
 
-## Step 3 - Build our preliminary ruleset
+## Step 3 - Build the preliminary ruleset
 
 There are two approaches to building a firewall ruleset: 1) default deny, or 2) default permit. The default deny approach blocks all traffic, and does not permit any traffic unless it is specified in a rule. The default permit approach does the exact opposite. It passes all traffic, and does not block any traffic unless it is specified in a rule. In this tutorial we will use the default deny approach.
 
@@ -77,9 +77,11 @@ pass out proto tcp to port { 22 53 80 123 443 }
 pass out proto udp to port { 53 123 }
 ```
 
-Our ruleset now permits **SSH, HTTP, DNS, NTP, and HTTPS** traffic in the outward direction, and blocks all traffic from the outside world. This keeps us safe while providing access to some critical services from the internet. Notice we placed the port numbers inside of the curly brackets. This is a **list** in [PF](https://man.openbsd.org/pf) syntax. Notice we added the **pass out** rule for the **UDP** protocol on ports **53** and **123**. This is because **DNS** and **NTP** will occasionally toggle between both protocols. Do some Google searching on that topic. We still need to add some final touches on our preliminary ruleset.
+Our ruleset now permits **SSH, HTTP, DNS, NTP, and HTTPS** traffic in the outward direction, and blocks all traffic from the outside world. This keeps us safe while providing access to some critical services from the internet. Notice we placed the port numbers inside of the curly brackets. This is a **list** in [PF](https://man.openbsd.org/pf) syntax. Notice we added the **pass out** rule for the **UDP** protocol on ports **53** and **123**. This is because **DNS** and **NTP** will occasionally toggle between both protocols. Do some Google searching on that topic. 
 
-Add the final touches:
+We're just about finished with our preliminary ruleset but still need to add some final touches.
+
+Complete the preliminary ruleset:
 ```
 set skip on lo0
 block all
@@ -89,74 +91,64 @@ pass out proto udp to port { 53 123 }
 pass out inet proto icmp icmp-type { echoreq }
 ```
 
-We added the `set skip` rule on our loopback device because it is unnecessary and will bog down the system. We also added a **pass out inet** rule for the **ICMP** messaging protocol, which will allow us to use [ping(8)](https://www.freebsd.org/cgi/man.cgi?query=ping&sektion=8&manpath=freebsd-release-ports) for troubleshooting purposes.
+We added the `set skip` rule on our loopback device because it is unnecessary and will bog down the system. We also added a **pass out inet** rule for the **ICMP** messaging protocol, which will allow us to use [ping(8)](https://www.freebsd.org/cgi/man.cgi?query=ping&sektion=8&manpath=freebsd-release-ports) for troubleshooting purposes. The **inet** option is represents the address family IPv4.
 
-**ICMP** is an often controversial protocol, however, as long as it is approached with care there is no harm in using it. For our purposes we just want to use [ping(8)](https://www.freebsd.org/cgi/man.cgi?query=ping&sektion=8&manpath=freebsd-release-ports), that's it. The [icmp(4)](https://www.freebsd.org/cgi/man.cgi?query=icmp&sektion=4&apropos=0&manpath=FreeBSD+12.0-RELEASE+and+Ports) protocol includes several different types of messages. The [ping(8)](https://www.freebsd.org/cgi/man.cgi?query=ping&sektion=8&manpath=freebsd-release-ports) utility only uses echo messages. Therefore in our **pass out inet** we *only* permit messages of type *echoreq*, which is the abbreviated term for echo messages. Every other type of message will be blocked in both directions. [PF](https://man.openbsd.org/pf) allows us to incorporate parameters that are directly specified in the [icmp(4)](https://www.freebsd.org/cgi/man.cgi?query=icmp&sektion=4&apropos=0&manpath=FreeBSD+12.0-RELEASE+and+Ports) protocol.
+ICMP is an often controversial protocol that is fraught with many assumptions, however, as long as it is approached with care there is no harm in using it. We just want to use [ping(8)](https://www.freebsd.org/cgi/man.cgi?query=ping&sektion=8&manpath=freebsd-release-ports), that's it. The [ping(8)](https://www.freebsd.org/cgi/man.cgi?query=ping&sektion=8&manpath=freebsd-release-ports) utility relies on ICMP *echo messages*. Therefore in our **pass out inet** rule we *only* permit messages of type *echoreq*, which is the abbreviation code for *echo messages* in the [icmp(4)](https://www.freebsd.org/cgi/man.cgi?query=icmp&sektion=4&apropos=0&manpath=FreeBSD+12.0-RELEASE+and+Ports) protocol. Every other type of message will be blocked in both directions. You many have noticed that [PF](https://man.openbsd.org/pf) lets us incorporate these codes directly in our ruleset. Yes it does! See `man icmp`.
 
-In case you were wondering about *state*, [PF](https://man.openbsd.org/pf) filters traffic statefully by default. It stores information about connections in what is known as the *state table*. Therefore [PF](https://man.openbsd.org/pf) knows when packets are affiliated with a previously established connection. That is why is is safe to make outward connections to the internet with our **pass out** rule.
+In case you are concerned about *state*, [PF](https://man.openbsd.org/pf) filters traffic statefully by default. It stores information about connections in a *state table*. [PF](https://man.openbsd.org/pf) knows when packets are affiliated with a previously established connection. That is why we can safely make outward connections to the internet.
 
 ## Step 4 - Test our preliminary ruleset
 
-Although we are far from finished, we have a working ruleset that provides fundamental protection and access to our droplet. That said, let's test it our ruleset during these early stages. We need to enable [PF](https://man.openbsd.org/pf), detach the droplet from our [cloud-firewall](https://www.digitalocean.com/docs/networking/firewalls/quickstart), reboot the droplet, and run some sanity checks.
+Although we are far from finished, we have a working ruleset that provides adequate protection to a fresh droplet. That said, let's test our ruleset before we get too far.
 
 Enable [PF](https://man.openbsd.org/pf) in `/etc/rc.conf`:
-```super_user
-sysrc pf_enable="YES"
-sysrc pflog_enable="YES"
+```command
+sudo sysrc pf_enable="YES"
+sudo sysrc pflog_enable="YES"
 ```
 
-Start [PF](https://man.openbsd.org/pf):
-```super_user
-service start pf
-service start pf_log
+Reboot the droplet:
+```command
+sudo reboot
 ```
 
 Load the ruleset with [pfctl](https://man.openbsd.org/pfctl):
-```super_user
-pfctl -f /etc/pf.conf
+```command
+sudo pfctl -f /etc/pf.conf
 ```
 
-If there are no messages, we are good-to-go! The [pfctl](https://man.openbsd.org/pfctl) utility is the default command-line tool that comes with [PF](https://man.openbsd.org/pf). We will use it frequently.
+If there are no messages, we are good-to-go!
 
-Now we can detach the droplet from our current [cloud-firewall](https://www.digitalocean.com/docs/networking/firewalls/quickstart) and let [PF](https://man.openbsd.org/pf) take over. Go ahead and do that from the [control panel](https://cloud.digitalocean.com/login) in your account. Give it a few minutes to finish.
-
-Reboot the droplet:
-```super_user
-reboot
+Reboot the droplet again:
+```command
+sudo reboot
 ```
 
-The connection to our droplet will be dropped. Give it a few minutes to finish. Now [PF](https://man.openbsd.org/pf) is in charge! Let's perform a few sanity checks to ensure that everything is working. 
+Detach the droplet from your [cloud-firewall](https://www.digitalocean.com/docs/networking/firewalls/quickstart) from the [control panel](https://cloud.digitalocean.com/login) in your account. The connection will be dropped. Now [PF](https://man.openbsd.org/pf) is in charge! Give it a few minutes to update.
 
 SSH back into the droplet:
 ```command
 ssh root@XXX.XXX.XX.XXX
 ```
 
-Reload the ruleset:
-```super_user
-pfctl -f /etc/pf.conf
-```
-
-There should be no errors or messages.
-
 Use [pfctl](https://man.openbsd.org/pfctl) to check out some stats:
-```super_user
-pfctl -si
+```command
+sudo pfctl -si
 ```
 
 Test internet connectivity with `ping`:
-```super_user
+```command
 ping 8.8.8.8
 ```
 
 Test DNS by updating the **pkgs** repository:
-```super_user
-pkg upgrade
+```command
+sudo pkg upgrade
 ```
 
 If any packages need to be upgraded, go ahead and do that. If all of these services are working, our ruleset is working, and we can proceed.
 
-## Step 5 - Completing our base ruleset
+## Step 5 - Complete our base ruleset
 
 ### Incorporate macros and tables
 
@@ -615,10 +607,6 @@ sudo scp myuser@XXX.XXX.XX.XX:pfstat.jpg /home/myuser
 ```
 
 The image should now show some graphical data.
-
-
-## Step 10 - Redundancy and load balancing: the hidden gems of PF (optional)
-
 
 
 ## Sample rulesets
