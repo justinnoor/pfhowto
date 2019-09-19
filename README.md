@@ -394,72 +394,69 @@ Add the following:
 ```
 \# minute	hour	mday	month	wday	command
 \   *		0	*	*	*	/usr/local/bin/clear_overflow.sh
-``
+```
 
 This creates a **cron job** that runs the `clear_overload.sh` script everyday at midnight. It will remove IP addresses that are 48 hours old from the overload table <blackhats>.
 
 
 ## Step 9 - Traffic shaping
 
-Packets are processed on a first-come-first-serve basis, which doesn't always work. There are times when we want to process certain packets before others, or ensure that certain packets do not waste our bandwidth. [PF](https://man.openbsd.org/pf) provides the **queue** option for managing bandwidth, and the **prio** option for prioritizing packets.
+[PF](https://man.openbsd.org/pf) processes packets on a first-come-first-serve basis, which is not necessarily optimal. There are times when we want to process certain packets before others. There may also be times when we want to delegate certain amounts of bandwidth to specific types of packets to ensure that we are using our bandwidth effeciently. [PF](https://man.openbsd.org/pf) provides the **prio** option for prioritizing packets, and the **queue** option for managing bandwidth.
 
 ### Shaping traffic with prio
 
-The **prio** option prioritizes traffic according to a number range, 0 thru 7, with zero being the slowest, and seven the fastest. [PF](https://man.openbsd.org/pf)'s priority queues are actually enabled by default with a value of 3, therfore, when we use the **prio** option we are actually changing [PF](https://man.openbsd.org/pf)'s default value. Let's experiment with **prio** without actually adding these options to our main ruleset.
+The **prio** option prioritizes traffic according to the number range 0 thru 7, with zero being the slowest, and seven the fastest. The **prio** option is actually enabled by default with a default value of 3, therfore, when we use the **prio** option we are actually changing default value. Below are some of examles of rules using the **prio** option. We won't add them to our main ruleset just yet.
 
-This rule prioritizes inward SSH traffic a knotch:
+Prioritize inbound SSH traffic a knotch:
 ```
 pass in proto tcp to port { 22 } set prio 4
 ```
 
-This rule optimizes web traffic:
+Optimize web traffic:
 ```
 pass proto tcp to port { 80 443 } set prio 7
 ```
 
-This rule lowers priority for outward name and time services:
+Lower the priority for *name* and *time* services:
 ```
 pass out proto tcp to port { 53 123 } set prio 2
+pass out proto udp to port { 53 123 } set prio 2
 ```
 
-It is important to understand that TCP connections also send *acknowledgement* (ACK) packets which contain no data (*Google the 3-way handshake*), therefore, by default ACK packets have to wait in line with every other packet. This means that they have the potential to clog up the system, and should be moved along as quick as possible. Thankfully the **prio** option was designed with this in mind and provides an utterly simple mechanism to deal with this.
-
-We can rewrite any of the rules above with a tuple:
+Prioritize web traffic to 6, and set *ACK* and *lowdelay* packets to 7:
 ```
 pass proto tcp to port { 80 443 } set prio (6,7)
 ```
 
-The first value of the tuple represents regular packets, and the second represents ACK packets. We speed up web traffic with a priority of 6, and also assign the highest priority to any affiliated ACK packets. In addition, the second value of the tuple is also designed to prioritze packets with a *lowdelay* set in their *type of service* (TOS) field. Therefore the value 7 applies to ACK packets, and packets with a *lowdelay* in their TOS field.
-
-If TOS is an unfamiliar term, don't dwell on it too much for the moment. However, do research it when time permits because its part of the TCP/IP protocol suite. Every seasoned administrator will insist that we need to understand these protocols in order to be successful developers.
+The last example is interesting. The first value of the tuple prioritizes regular packets, and the second prioritizes *ACK* and *lowdelay* packets. TCP connections send *acknowledgement* (ACK) packets which contain no data (*Google the 3-way handshake*). By default, ACK packets have to wait in line with every other packet, which means they have the potential to clog up the system, and should be moved along quickly. In addition, packets may also arrive with a *lowdelay* set in their *type of service* (TOS) field, which means that they should also be processed before others. As we've shown, the **prio** option was designed to handle these details.
 
 ### Shaping traffic with queue
 
-The **prio** option on its own may not always suffice because it strictly reshuffles the order in which packets are filtered. It may be necessary to confine certain packets to a specified amount of bandwidth because it is a limited resource that is expensive, and has a major ramifications for network performance. We can accomplish this with [PF](https://man.openbsd.org/pf)'s **queue** option.
+The **prio** option on its own may not always suffice because it strictly reshuffles the order in which packets are filtered. It may be necessary to confine certain packets to a specified amount of bandwidth. Administrators are typically concerned with bandwidth usage because it is a limited resource that is expensive, and directly affects network performance. With [PF](https://man.openbsd.org/pf) we can manage bandwidth with the **queue** option.
 
-Let's assume we want to reserve the majority of our outward bandwidth for web services. Digital Ocean droplets provide 1000 GB/month of free outward data transfers. We can create a queue that allocates this amount to our network interface `vtnet0`. This is not a perfect representation of our total bandwidth activity, however, it gives us a decent amount of control, and also protects us from rogue applications.
+Let's assume we want to reserve the majority of our outward bandwidth for web services. Digital Ocean droplets provide 1000 GB/month of free outward data transfers. We can create a queue that allocates this amount to our network interface `vtnet0`. This will not be a perfect representation of our total bandwidth activity, however, it gives us a decent amount of control, and could also protect us from a rogue application eating up our bandwidth.
 
-[PF](https://man.openbsd.org/pf) queues are trees with root-parent-child hierarchies. There can be mulitple parents within a root queue, or the root queue itself can be the parent, as with our example. Every interface must also have one **default** queue, which will be shown below. Bandwidth is specified in kilobits **K**, megabits **M**, or gigabits **G**, *per second*. Let's create a root queue named **rootq**, with two child queues named **web** and **catchall**. 
+[PF](https://man.openbsd.org/pf) queues are structured like trees with parent-child hierarchies. Every queue structure has a root queue and a default queue. Bandwidth is specified in kilobits **K**, megabits **M**, or gigabits **G**, *per second*. Let's create a root queue named **rootq**, with two child queues named **web** and **catchall**. We'll walk through the queueing process without adding them to our ruleset just yet.
 
-Create the queue:
+A basic queue:
 ```
 queue rootq on $ext_if bandwidth 200M
     queue web parent rootq bandwidth 150M
     queue catchall parent rootq bandwidth 50M default
 ```
 
-We've allocated 150M of **rootq**'s bandwidth to its child **web**, and the remainder to its other child **catchall**. In reality, bandwidth activity is never as uniform as it appears in our queue allocations. Queues will borrow bandwidth from eachother during traffic spikes, which can potentially hinder the availability of a service. Thankfully [PF](https://man.openbsd.org/pf) provides some options to control this.
+Here we allocated 150M of **rootq**'s bandwidth to its child **web**, and the remainder to its other child **catchall**. In reality, bandwidth activity is never as uniform as it appears in the basic queue examples. Queues will borrow bandwidth from eachother during traffic spikes, which can potentially hinder the availability of a service. Thankfully [PF](https://man.openbsd.org/pf) provides some options to control this, which we added to the second queue.
 
-Let's revise the queue:
+A queue with limits and controls:
 ```
 queue rootq on $ext_if bandwidth 200M max 200M
     queue web parent rootq bandwidth 150M
     queue catchall parent rootq bandwidth 50M min 15M max 50M burst 75M for 100ms default
 ```
 
-We added a **max** keyword to both **rootq** and **catchall** so that they do not exceed their allocations through borrowing. We do not add the **max** keyword to the **web** queue because web services are the top priority. Since our **web** queue is essentially left unchecked, chances are it will borrow from **catchall**. For this reason we used the **min** keyword with **catchall** to ensure that it always has at least 15M of bandwidth available at all times. We also added the **burst** keyword to **catchall**, which allows it to exceed its 50M allocation temporarily in the event of a traffic spike.  Finally, we make **catchall** our **default** queue so that if a packets has no matching rule, it will automatically be sent there. Despite the nuances and quirks involved with bandwidth management, in the end we will benefit from using queues.
+In the *second queue* we added a **max** keyword to both **rootq** and **catchall** so that they do not exceed their allocations through borrowing. We do not add the **max** keyword to the **web** queue because web services are the top priority. Since our **web** queue is essentially left unchecked, chances are it will borrow from **catchall**. For this reason we used the **min** keyword with **catchall** to ensure that it always has at least 15M of bandwidth available at all times. We also added the **burst** keyword to **catchall**, which allows it to exceed its 50M allocation temporarily in the event of a traffic spike.  Finally, we make **catchall** our **default** queue so that if a packets has no matching rule, it will automatically be sent there. Despite the nuances and quirks involved with bandwidth management, in the end we will benefit from using queues.
 
-We can also have subqueues:
+A queue with subqueues:
 ```
 queue rootq on $ext_if bandwidth 200M max 200M
     queue web parent rootq bandwidth 100M
@@ -467,18 +464,31 @@ queue rootq on $ext_if bandwidth 200M max 200M
     queue catchall parent rootq bandwidth 50M min 15M max 50M burst 100M for 100ms default
 ```
 
-Now the queues can be added to their corresponding rules in the main ruleset:
+In the *third queue* we added a subqueue to the *web* queue, allocating 50M of bandwith with a 50M **max** to prevent it from borrowing from other queues.
+
+Add a queue to the main ruleset:
 ```
 pass out proto tcp to port { 80 443 } set queue web set prio (6,7)
 ``
 
-Notice we coupled the **queue** option with the **prio** option because we can do that! This means we will have some pretty darn fast http traffic!
+Finally, the example above shows how we would add the *web* queue to the main ruleset. Notice we coupled the **queue** option with the **prio** option because we can do that! This means we will have some pretty darn fast http traffic!
 
 ## Step 9 - Monitoring and logging
 
 Our firewall is of little use if we cannot see what it is doing. Policy decisions in network security are highly dependent on packet analyses, which inevitably invloves examining log files. With [PF](https://man.openbsd.org/pf), logging occurs on a psuedo-device known as the **pflog** interface, which can be viewed with `ifconfig`. Since it is an interface, various userland tools can be used to access the data that it logs. The default interface is **pflog0**, and it is possible to create multiple log interfaces by creating a **hostname** file. For example to create a **pflog1** interface, we would create a `/etc/hostname.pflog1` file containing only the `up` command. We would then enable it in `/etc/rc.conf` with `pflog1_enable="YES"`.
 
 To create logs we add the **log** keyword to any of our rules. [PF](https://man.openbsd.org/pf) will only log what we tell it to. Once the rules are enacted, [PF](https://man.openbsd.org/pf) makes copies of the packet headers, writing them to `/var/log/pflog` in binary format.
+
+### Labeling packets with tags
+
+It is possible to tag packets for troubleshooting and organizational purposes.
+
+Tag our SSH rule:
+```
+pass in proto tcp to port { 22 } tag SSH
+```
+
+Any packet that matches the above rule will be tagged with "SSH". The tag will act as a marker, providing better visibility to packets when logging, troubleshooting, etc.
 
 ### Accessing log data with tcpdump
 
@@ -514,17 +524,6 @@ sudo tcpdump -nei pflog0
 ```
 
 There is a wealth of information on how to use **tcpdump**, which is an extensive tool that has been strongly supported for many decades. Using **tcpdump** effectively requires us to determine exactly what we want to know about our packets, and how we want view them in the log files.
-
-### Labeling Pf's state table entries
-
-It is possible to tag packets for troubleshooting and organizational purposes.
-
-Tag our SSH rule:
-```
-pass in proto tcp to port { 22 } tag SSH
-```
-
-Any packet that matches the above rule will be tagged with "SSH". The tag will act as a marker, making it easier to identify packets when logging, troubleshooting, etc.
 
 ### Accecssing log files with pftop (recommended)
 
