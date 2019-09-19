@@ -6,7 +6,7 @@ Networks are hostile places. Every organization will face this reality unless th
 
 In this tutorial we build a firewall from the ground up on a FreeBSD 12.01 droplet using [PF](https://man.openbsd.org/pf), a renown packet filtering application that is maintained by the [OpenBSD](https://www.openbsd.org) project. [PF](https://man.openbsd.org/pf) is part of the FreeBSD base system, and is a foundational tool in the world of Unix administration. It is known for its simple-syntax, user-friendliness, and astonishing power.
 
-This lesson is *not* a command reference. It is designed to help you get started with [PF](https://man.openbsd.org/pf) on the Digital Ocean platform. Our goal create a base ruleset that can be serve as a formidable starting point for new droplets. We will also discuss more advanced concepts such as adaptive rulesets, bandwidth management, blacklisting, redundancy, and more.
+This lesson is *not* a command reference. It is designed to help you get started with [PF](https://man.openbsd.org/pf) on the Digital Ocean platform. Our goal create a base ruleset that can be serve as a formidable starting point for new droplets. We will also discuss more advanced concepts such as adaptive rulesets, bandwidth management, blacklisting, and more.
 
 ## Prerequisites
 
@@ -99,7 +99,7 @@ In case you are concerned about *state*, [PF](https://man.openbsd.org/pf) filter
 
 ## Step 4 - Test our preliminary ruleset
 
-Although we are far from finished, we have a working ruleset that provides adequate protection to a fresh droplet. That said, let's test our ruleset before we get too far.
+Although we are far from finished, we have a working ruleset that provides adequate protection to a fresh droplet. That said, let's test our ruleset before we get too far. Rulesets are loaded with the [pfctl](https://man.openbsd.org/pfctl) utility, which is the default command-line tool that ships with [PF](https://man.openbsd.org/pf).
 
 Enable [PF](https://man.openbsd.org/pf) in `/etc/rc.conf`:
 ```command
@@ -112,19 +112,19 @@ Reboot the droplet:
 sudo reboot
 ```
 
-Load the ruleset with [pfctl](https://man.openbsd.org/pfctl):
+Load the ruleset:
 ```command
 sudo pfctl -f /etc/pf.conf
 ```
 
-If there are no messages, we are good-to-go!
+If there are no errors or messages, we're good-to-go!
 
 Reboot the droplet again:
 ```command
 sudo reboot
 ```
 
-Detach the droplet from your [cloud-firewall](https://www.digitalocean.com/docs/networking/firewalls/quickstart) from the [control panel](https://cloud.digitalocean.com/login) in your account. The connection will be dropped. Now [PF](https://man.openbsd.org/pf) is in charge! Give it a few minutes to update.
+Detach the droplet from your [cloud-firewall](https://www.digitalocean.com/docs/networking/firewalls/quickstart) from the [control panel](https://cloud.digitalocean.com/login) in your account. The connection will be dropped. [PF](https://man.openbsd.org/pf) is now the active firewall. Give it a few minutes to update.
 
 SSH back into the droplet:
 ```command
@@ -136,7 +136,7 @@ Use [pfctl](https://man.openbsd.org/pfctl) to check out some stats:
 sudo pfctl -si
 ```
 
-Test internet connectivity with `ping`:
+Test internet connectivity:
 ```command
 ping 8.8.8.8
 ```
@@ -146,29 +146,29 @@ Test DNS by updating the **pkgs** repository:
 sudo pkg upgrade
 ```
 
-If any packages need to be upgraded, go ahead and do that. If all of these services are working, our ruleset is working, and we can proceed.
+If any packages need to be upgraded, go ahead and do that. If all of these services are working, that means our ruleset is working and we can proceed.
 
-## Step 5 - Complete our base ruleset
+## Step 5 - Complete the base ruleset
+
+Here we will complete the base ruleset. Please note that rules in [PF](https://man.openbsd.org/pf) must be written in a specific order, and it is easy to get lost. If you find yourself getting confused in the order of things, refer to the complete base ruleset at step 8.
 
 ### Incorporate macros and tables
 
-In our preliminary ruleset above we hard coded all of our parameters into our rules. This works for now, but will likely become unmanageable as our ruleset expands. For organizational purposes [PF](https://man.openbsd.org/pf) offers **macros**, **lists**, and **tables**. We already used lists in some of our **pass out rules**, which were the port numbers that we placed inside of the curly brackets. Macros allow us to declare variables that are defined by several parameters, and tables do the same for groups of IP addresses. 
+In our preliminary ruleset above we hard coded all of our parameters, i.e., the port numbers. This will become unmanageable as the ruleset expands. For organizational purposes [PF](https://man.openbsd.org/pf) offers **macros**, **lists**, and **tables**. We've already used lists, which were the port numbers inside of the curly brackets. We can also assign lists, or single values, to a variable using **macros**. Let's reorganize our parameters.
 
-Let's begin by moving all of our parameters into macros.
-
-Add the following to the top of the ruleset:
+Create the macros:
 ```
 ext_if = "vtnet0"
 tcp_services= "{ 22 53 80 123 443 }"
 udp_services= "{ 53 123 }"
-icmp_messages= "{ echoreq unreach }"
+icmp_messages= "{ echoreq }"
 ```
 
-Now we can add the variables to our rules, making our ruleset significantly easier read. Notice we also added a macro for our network interface **vtnet0**, which is the default interface on a singleton Digital Ocean droplet.
+Now we can call the variable names inside of a rule instead of the parameters. This makes our ruleset easier read, and easier to expand. Notice we also added a macro for our network interface **vtnet0**, which is the default interface on a singleton Digital Ocean droplet.
 
-Next we introduce a table that contains a common group of IP addresses that are non-routable, and have no business traveling through the internet. Non-routable IP addresses often play a role in Denial of Service attacks (DOS) as well. Our network should not send or receive packets that contain these addresses in their headers. The IP addresses in our table below were derived from [RFC6890](https://tools.ietf.org/html/rfc6890), which documents special-purpose IP address registries, hence the name.
+[PF](https://man.openbsd.org/pf) also provides **tables**, which are similar to macros, but they are designed to hold groups of IP addresses. Let's create a **table** for non-routable IP addresses that have no business traveling through the internet. Non-routable IP addresses often play a role in Denial of Service attacks (DOS). Our droplet should not send or receive packets containing these source addressess. For our **table** we will use all of the IP addresses that are specified in [RFC6890](https://tools.ietf.org/html/rfc6890), which defines special-purpose IP address registries.
 
-Add the following table below the macros:
+Create the table:
 ```
 table <rfc6890> { 0.0.0.0/8 10.0.0.0/8 100.64.0.0/10 127.0.0.0/8 169.254.0.0/16          \
                   172.16.0.0/12 192.0.0.0/24 192.0.0.0/29 192.0.2.0/24 192.88.99.0/24    \
@@ -178,48 +178,52 @@ table <rfc6890> { 0.0.0.0/8 10.0.0.0/8 100.64.0.0/10 127.0.0.0/8 169.254.0.0/16 
 
 ### Traffic normalization
 
-Traffic normalization is a broad term that refers to the mitigation of various packet discrepancies. Packets often arrive fragmented, with erroneous TCP flag combinations, or with bogus IP addresses (spoofed). Some of these issues originate from malicious actors, others are a result of the many implementations of the TCP/IP protocol suite. Fragmented packets are the source of myriad security exploits.
+Traffic normalization is a broad term that refers to the handling of various packet discrepancies. Packets often arrive fragmented, with erroneous TCP flag combinations, or with bogus IP addresses (spoofed). Some of these issues originate from malicious actors, others are the result of the many implementations of the TCP/IP protocol suite. Fragmented packets are the source of myriad security exploits. For our purposes, our discussion of traffic normalization will include scrubbing, antispoofing, and creating rules against our `table <rfc6890>`.
 
 ### Scrubbing
 
-We use the **scrub** keyword will cleanup our fragmentation issues:
+[PF](https://man.openbsd.org/pf) provides a **scrub** keyword to handle packet fragmentation issues. It will re-assemble fragmented packets, discard any cruft, and drop packets that have erroneous TCP flag combinations. We want to subject all incoming packets to a **scrub** rule. 
+
+Add the **scrub** rule:
 ```
 scrub in
 ```
 
-The above rule applies to all incoming traffic. It will re-assemble fragmented packets, discard any cruft, and drop packets that have erroneous TCP flag combinations.
-
-Please be aware that some applications require special attention in regards to normalization. Using an NFS filesystem for example may require that the `no-df` and `random-id` options are set because some operating systems will automatically set the **dont-fragment** bit. When in doubt, research all of the **scrub** options.
+Please be aware that some applications require special attention in regards to scrubbing. NFS filesystems, for example, may require that the `no-df` and `random-id` options are set because there are some operating systems will automatically set the **dont-fragment** bit. When in doubt, research all of the **scrub** options. For most purposes the above rule works fine.
 
 ### Antispoofing
 
-Spoofing is the practice of using fake IP addresses to disguise the real host address, typically for malicious purposes. [PF](https://man.openbsd.org/pf) knows when certain IP addresses are traveling in directionsr that are impossible.
+Spoofing is the practice of using fake IP addresses to disguise the real host address, typically for malicious purposes. [PF](https://man.openbsd.org/pf) knows when certain IP addresses are traveling in directions that are impossible, and has a built-in keyword to deal with them.
 
-Add the following rule:
+Add antispoofing:
 ```
 antispoof quick for $ext_if
 ```
 
+We also introduced the **quick** keyword, which tells [PF](https://man.openbsd.org/pf) to execute the rule without doing any further processing of the ruleset. This is desirable for handling false IP addresses because we want those packets to be discarded immediately, and have no reason to perform any additional filtering on them.
+
 ### Blocking non-routable IP addresses
 
-We can block all of the IP addresses from our **rfc6890** table:
+We created the `table <rfc6890>`, but we still have to create rules against it. We want to block all IP addresses from this table in both directions, not only from the outside world, but internally as well. Our droplets should not attempt to make connections to these IP addresses under any circumstances.
+
+Block IP addresses from table <rfc6890>:
 ```
-block in quick on egress from <rfc6890> to any
-block return out quick on egress from any to <rfc6890>
+block in quick on egress from <rfc6890>
+block return out quick on egress to <rfc6890>
 ```
 
-Here we introduce the **quick** keyword, which tells [PF](https://man.openbsd.org/pf) to execute the rule without any further processing of the ruleset. This is desirable for handling non-routable and spoofed IP addresses because we want those packets to be discarded immediately. We also introduce the **return** option for our **block** rule, which blocks outbound packets with a source address from <rfc6890>, but also sends an RST message to the host that made this attempt. Finally, we introduce the **egress** keyword on our **block return out** rule, which automatically finds the default route. This is often a cleaner method of finding the default route, especially on larger networks.
+We also introduced the **return** option, which compliments our **block out** rule. The **block return out** rule will drop the packet, and also send an RST message to the host that attempted to make this connection. Finally, we introduced the **egress** keyword, which automatically finds the default route. This is often a cleaner method of finding the default route, especially on complex networks.
 
-## Step 6 - Summarize our progress
+## Step 6 - Review and test the base ruleset
 
-We have a complete base ruleset that can serve as a formidable starting point for any new droplet. Our ruleset can easily be expanded, and our macros, lists, and tables enable us to easily incorporate additional parameters. Currently, we are only allowing **SSH** traffic on port 22 into our machine. In the future, if we need to open up some more ports, we simply add them into the list in our **pass in** rule.
+We now have a complete base ruleset that can serve as a formidable starting point for new droplets. Our ruleset is easy to read and can easily be expanded. To summarize our ruleset, we currently permit inbound **SSH** traffic, have some nice network hygiene measures in place, and have access to some critical services that safely bring our droplets into an operational state. For the sake of tidiness, from here forward we will no longer rewrite the entire ruleset as we expand on it. Instead we have included complete sample rulesets at the end of the tutorial. Feel free to look at them anytime.
 
 Here is our complete base ruleset:
 ```
 ext_if = "vtnet0"
 tcp_services= "{ 22 53 80 123 443 }"
 udp_services= "{ 53 123 }"
-icmp4_messages= "{ echoreq unreach }"
+icmp4_messages= "{ echoreq }"
 table <rfc6890> { 0.0.0.0/8 10.0.0.0/8 100.64.0.0/10 127.0.0.0/8 169.254.0.0/16          \
                   172.16.0.0/12 192.0.0.0/24 192.0.0.0/29 192.0.2.0/24 192.88.99.0/24    \
                   192.168.0.0/16 198.18.0.0/15 198.51.100.0/24 203.0.113.0/24            \
@@ -231,52 +235,58 @@ antispoof quick for $ext_if
 block in quick on $ext_if from <rfc6890> 
 block return out quick on egress to <rfc6890>
 block all
-pass in proto tcp to port { 22 }
+pass in proto tcp to port { 22 } tag SSH
 pass out proto tcp to port $tcp_services
 pass out proto udp to port $udp_services
 pass inet proto icmp icmp-type $icmp4_messages
 ```
 
-Now it's time to test our ruleset, and make a copy of it. For the sake of tidiness, from here forward we will no longer rewrite the entire ruleset as we expand on it. We have placed our complete sample rulesets at the end of the tutorial. Feel free to look at them anytime.
+## Step 6 - Test the base ruleset
 
-Use the `-nvf` flags to `pfctl` to take a dry run:
-```super_user
-pfctl -nvf /etc/pf.conf
+We can take a test run using `pfctl -nvf /etc/pf.conf`, which will not actually load the new ruleset, but throw an error if something is wrong. When you run this command the rules look much different. In reality, this is what our rules really look like in their full-form. [PF](https://man.openbsd.org/pf) allows us to write shortcut versions of our rules for readability purposes, which is how we have written our base ruleset. Viewing the rules in their full-form with `pfctl -nvf /etc/pf.conf` is a good way to learn the [PF](https://man.openbsd.org/pf) syntax.
 
-If there are no errors, the ruleset is working. This also gives us a view of what our ruleset really looks like. [PF](https://man.openbsd.org/pf) allows us to write shortcuts for its rules, and now we can see the rules in their full form. This is a good way to see what's going on underneath the hood.
-
-Load the ruleset:
-```super_user
-pfctl -f /etc/pf.conf
+Take a test run:
+```command 
+sudo pfctl -nvf /etc/pf.conf
 ```
 
-Make a copy of ruleset:
-```
-cp /etc/pf.conf /etc/pf.conf.orig
+There should be no errors.
+
+Load the base ruleset:
+```command
+sudo pfctl -f /etc/pf.conf
 ```
 
-Test internet connectivity with `ping`:
-```super_user
+There should be no errors.
+
+Make a copy of the base ruleset:
+```command
+sudo cp /etc/pf.conf /etc/pf.conf.orig
+```
+
+Test internet connectivity:
+```command
 ping 8.8.8.8
 ```
 
 Test DNS by updating the **pkgs** repository:
-```super_user
-pkg upgrade
+```command
+sudo pkg upgrade
 ```
 
 If there are any packages to update, go ahead and do that.
 
 
-## Step 6 - Introduce anchors
-[PF](https://man.openbsd.org/pf) provides **anchors**, which are defined as *containers* that hold rules, tables, and even other anchors. Using an **anchor** is a clever way to source rules into the main ruleset, either on-the-fly with `pfctl`, or with an external text file. Let's demonstrate this with table <rf6890>. Instead of placing table <rfc6890> at the top of the ruleset, we use a text file.
+## Step 7 - Introduce anchors
 
-Create the file **/etc/non_routes**:
-```super_user
-vim /etc/non_routes
+[PF](https://man.openbsd.org/pf) provides **anchors**, which allow us to source rules into the main ruleset, either on-the-fly with `pfctl`, or with an external text file. Here we will discuss **anchors** without actually adding them into our base ruleset. We will demonstrate their usefulness with our table <rf6890>. Instead of placing table <rfc6890>, and its corresponding rules, in the ruleset, we could have written them in an external text file, and called them from the ruleset with an anchor.
+
+Create a file called `/etc/non_routes`:
+```command
+sudo vim /etc/non_routes
 ```
 
-Transfer the following rules:
+Add the following rules:
 ```
 ext_if = "vtnet0"
 
@@ -289,8 +299,7 @@ block in quick on $ext_if from <rfc6890>
 block return out quick on egress to <rfc6890>
 ```
 
-The above rules can be removed from the main ruleset (except for the $ext_if macro). Now we call these rules from a text file named `/etc/non_routes`. We name the anchor non-routes_anchor as it cannot have the same name as the file.
-
+Add the anchor:
 ```
 *--snip--*
 set skip on lo0
@@ -302,9 +311,9 @@ block all
 *--snip--*
 ```
 
-One really intelligent feature of anchors is their ability to insert rules manually into running ruleset without reloading them. This can be useful for testing, quick-fixes, emergencies, etc.
+One extremely intelligent feature of anchors is their ability to insert rules into a running ruleset on-the-fly without having to reload it. This can be useful for testing, quick-fixes, emergencies, etc. For example, let's imagine that a remote host is acting strange and we want to block it without formally adding a rule to the main ruleset. Instead we can add an anchor just below the **block all** rule. We'll name it `rogue_host`
 
-Add an anchor *below* the **block all** rule:
+Add the anchor:
 ```
 *--snip--*
 set skip on lo0
@@ -317,50 +326,51 @@ anchor rogue_host
 *--snip--*
 ```
 
-Rules can now be added manually on-the-fly with the `pfctl` utility from the command-line. For example we can block all traffic from a remote host that it acting strange.
-
-Block a remote host:
-```super_user
-echo "block in quick from XXX.XXX.XX.X" | pfctl -a rogue_host -f -
+Block the rogue host from the command-line:
+```command
+sudo echo "block in quick from XXX.XXX.XX.X" | pfctl -a rogue_host -f -
 ```
 
 There are many pros and cons to using anchors, all of them are completely situational. Anchors may help reduce clutter in a ruleset by breaking it up into separate text files, however, managing multiple files might be cumbersome and hard to read. Anchors can be useful for adding rules on-the-fly, however, someone has to be present to add those rules. In other scenarios anchors are necessary for third party tools that are designed to integrate with [PF](https://man.openbsd.org/pf).
 
-## Step 7 - Defending against cryptography exploits
+## Step 8 - Defending against cryptography exploits
 
-Cryptography exploits, such as brute force or key search attacks, occur when attackers systematically decrypt passwords in order to access the system. These are often performed with a great deal of sophistication and effort, and usually succeed if the target machine has weak passwords. In the strongest terms, we recommend using public-key authentication on all droplets. Even with public-key authentication, attackers or netbots can still be a nuisance, and key search attacks are not impossible. We can prevent these types of attacks with [PF](https://man.openbsd.org/pf)'s state monitoring capabilities, which can detect and deny forced entry attempts, and ban the attackers IP addresses from the network. 
+Cryptography exploits, such as brute force or key search attacks, occur when attackers systematically decrypt passwords in order to access the system. These are often performed with a great deal of sophistication, and usually succeed if the target machine has weak passwords. In the strongest terms we recommend using public-key authentication on your droplets. However, attackers or netbots can still be a nuisance, even with key authentication, and key search attacks are not impossible. We can help prevent these attacks by using [PF](https://man.openbsd.org/pf)'s state monitoring capabilities, coupled with its **overload** mechanism, which will ban suspicious IP addresses for a specified period of time. 
 
-### Banning malicious IPs with the overload table
+### Blacklisting IP addresses with the overload mechanism
 
-Create an empty table:
-
+Add the overload table:
+```
 table <blackhats> persist
+```
 
-The **persist** keyword allows us to maintain empty tables. Next we modify our **pass in** rule for SSH traffic so that the number of permissible simultaneous connections it significantly reduced and considered a crypto attack. For example if port 22 receives 100 failed login attempts in 10 seconds, it is likely a brute force attack, and the source IP should be banned from the system.
-
-Modify the rule:
+Modify our previous SSH rule:
 ```
 pass in proto tcp to port { 22 } \
     keep state (max-src-conn 10, max-src-conn-rate 3/1, \
         overload <blackhats> flush global)
 ```
 
-The **max-src-conn 10** option permits only 10 simultaneous connections from a single host. The **max-src-conn-rate 3/1** option will only allow 3 new connections per second from a single host. If these options are exceeded, the **overload** option will add the source address to the <blackhats> table, where it will be banned until we remove it (from the table). Finally, the **flush global** option immediately drops the connection.
+The **persist** keyword allows us to maintain empty tables. Next we modify our previous **pass in** rule for SSH traffic by including some of [PF](https://man.openbsd.org/pf)'s **keep state** options. These will act as the criteria for the **overload** mechanism, and will significantly reduce the frequency at which external hosts are allowed can make SSH connections to our droplet. For example, if port 22 receives 100 failed SSH logins in 10 seconds, it is likely a brute force attack, and the source IP should be blacklisted.
 
-We have enforced strict measures on our SSH traffic for good reason, however, these restrictions are not suitable for every type of service. When our servers get overloaded with connections, it is not always an attacker. It could be a random web service that was dynamically assigned an IP address. Blocking it may or may not make sense, depending on the circumstances. Additional overload tables should be created for services that can afford liberal connection policies.
+The **max-src-conn 10** option permits only 10 simultaneous connections from a single host. The **max-src-conn-rate 3/1** option will only allow 3 new connections per second from a single host. If these options are exceeded, the **overload** mechanism will add the source address to the <blackhats> table, where it will then be banned until we remove it (from the table). Finally, the **flush global** option immediately drops the connection.
 
-Over time the overload tables grow and should be cleared. It is not likely that an attacker will continue using the same IP address so it is non-sensical to keep them in the table forever. We can clear our overload <blackhats> table with `pfctl`.
+We have enforced strict measures on our SSH traffic for good reason, however, these restrictions are not suitable for every type of service. When our servers get overloaded with connections, it is not always an attacker. It could be a random web service that was dynamically assigned an IP address. Blocking it may or may not be the right decision, depending on the circumstances. Additional overload tables should be created for services that can afford more liberal connection policies. See the sample ruleset 2.
+
+Over time the overload table will grow and should be cleared. It is not likely that an attacker will continue using the same IP address, therefore, it is non-sensical to keep it in the table for long periods of time. We can clear the overload table manually with `pfctl`, or we can automate the process with **cron**, which is FreeBSD's job scheduler.
+
+### Clear the overload table manually
 
 Clear IPs that are 48 hours old:
-```super_user
-pfctl -t blackhats -T expire 172800
+```command
+sudo pfctl -t blackhats -T expire 172800
 ```
 
-We can also automate this with **cron**, FreeBSD's job scheduler, which is typically used for maintanence tasks. The **cron** scheduler uses shell scripts to perform jobs, which are called from configuration files known as **crontabs**. Let's create a **cron job** that runs everyday at midnight, that will remove IP addresses that are 48 hours old from the overload <blackhats> table.
+### Clear the overload table with a cron job
 
-Create the shell script:
-```super_user
-vim /usr/local/bin/clear_overload.sh
+Create a shell script:
+```command
+sudo vim /usr/local/bin/clear_overload.sh
 ```
 
 Add the following:
@@ -371,11 +381,11 @@ pfctl -t blackhats -T expire 172800
 ```
 
 Make the file executable:
-```super_user
-chmod 755 /usr/local/bin/clear_overload.sh
+```command
+sudo chmod 755 /usr/local/bin/clear_overload.sh
 ```
 
-Create a sudo user crontab:
+Create a crontab:
 ```command
 sudo crontab -e
 ```
@@ -384,10 +394,14 @@ Add the following:
 ```
 \# minute	hour	mday	month	wday	command
 \   *		0	*	*	*	/usr/local/bin/clear_overflow.sh
+``
 
-## Step 8 - Traffic shaping
+This creates a **cron job** that runs the `clear_overload.sh` script everyday at midnight. It will remove IP addresses that are 48 hours old from the overload table <blackhats>.
 
-Packets are processes on a first-come-first-serve basis, which doesn't always work. There are times when we want to process certain packets before others, or ensure that certain packets do not waste our bandwidth. [PF](https://man.openbsd.org/pf) provides the **queue** option for managing bandwidth, and the **prio** option for prioritizing packets.
+
+## Step 9 - Traffic shaping
+
+Packets are processed on a first-come-first-serve basis, which doesn't always work. There are times when we want to process certain packets before others, or ensure that certain packets do not waste our bandwidth. [PF](https://man.openbsd.org/pf) provides the **queue** option for managing bandwidth, and the **prio** option for prioritizing packets.
 
 ### Shaping traffic with prio
 
@@ -535,7 +549,7 @@ tcp   In  222.185.15.217:17359  157.225.173.58:22       TIME_WAIT:TIME_WAIT    0
 udp   Out 157.245.171.59:4699   67.203.62.5:53           MULTIPLE:SINGLE       00:00:14  00:00:16      2   227
 ```
 
-### Viewing graphical representations with pfstat (optional)
+### Creating graphical representations of our packet filter with pfstat (optional)
 
 Often times we need graphical representations of our packet filtering to show clients, colleagues, or maybe the boss. The **pfstat** utility is a lightweight tool that is perfect for this. The way it works is that it populates a `/var/db/pfstat.db` database with data that it collects from `/dev/pf`. This is usually done continuously with a **cron** job, but can also be done manually from the command-line. We tell **pfstat** what we want to store in the database in the `/usr/local/etc/pfstat.conf` configuration file. We can then translate the data into graphs that are stored in either **jpg** or **png** image formats.
 
