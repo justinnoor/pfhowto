@@ -1,56 +1,56 @@
-# How to Configure PF on a FreeBSD 12.0 Digital Ocean Droplet (FIRST DRAFT)
+# How to Configure PF on a FreeBSD 12.0 Digital Ocean Droplet
 
 ### Introduction
 
-Networks are hostile places. Every organization will face this reality unless they are completely offline and have no internal threats. The firewall is arguably one of the most important lines of defense against cyber attacks. The ability to configure a firewall from scratch is an empowering skill that enables the administrator take control of their networks.
+Networks are hostile places. Every organization will face this reality unless they are completely offline and have no internal threats. The firewall is arguably one of the most important lines of defense against cyber attacks. The ability to configure a firewall from scratch is an empowering skill that will enable the administrator take control of their networks.
 
-In this tutorial we build a firewall from the ground up on a FreeBSD 12.01 droplet using [PF](https://man.openbsd.org/pf), a renown packet filtering application that is maintained by the [OpenBSD](https://www.openbsd.org) project. [PF](https://man.openbsd.org/pf) is part of the FreeBSD base system, and is a foundational tool in the world of Unix administration. It is known for its simple-syntax, user-friendliness, and astonishing power.
+In this tutorial we build a firewall from the ground up on a FreeBSD 12.0 droplet using [PF](https://man.openbsd.org/pf), a renown packet filtering tool that is maintained by the [OpenBSD](https://www.openbsd.org) project. It is known for its simple-syntax, user-friendliness, and extensive power. [PF](https://man.openbsd.org/pf) ships with the FreeBSD base system and is supported by a community of dedicated users.
 
-This lesson is *not* a command reference. It is designed to help you get started with [PF](https://man.openbsd.org/pf) on the Digital Ocean platform. Our goal create a base ruleset that can be serve as a formidable starting point for new droplets. We will also discuss more advanced concepts such as adaptive rulesets, bandwidth management, blacklisting, and more.
+This lesson is *not* a command reference. It is designed to help you get started with [PF](https://man.openbsd.org/pf) on the Digital Ocean platform. Our goal is to create a portable base ruleset that will serve as a formidable starting point for new droplets. We will progress into more advanced concepts such as adaptive rulesets, bandwidth management, blacklisting, and more.
 
 ## Prerequisites
 
 * A Unix-like workstation (BSD, Linux, or Mac)
-* A [cloud-firewall](https://www.digitalocean.com/docs/networking/firewalls/quickstart) that only permits inbound SSH traffic. Refer to this [quickstart guide](https://www.digitalocean.com/docs/networking/firewalls/quickstart).
+* A [cloud-firewall](https://www.digitalocean.com/docs/networking/firewalls/quickstart) that permits inbound SSH traffic. Refer to this [quickstart guide](https://www.digitalocean.com/docs/networking/firewalls/quickstart).
 * An [SSH keypair](https://www.digitalocean.com/docs/droplets/how-to/add-ssh-keys/to-account) with a copy of the public key uploaded to your account
-* A standard 1G FreeBSD 12.0 droplet in the region of choice, either ZFS or UFS.
+* A standard 1G FreeBSD 12.0 droplet in the region of choice. 
 
 ## Step 1 - Create the droplet
 
-Create a standard 1G FreeBSD 12.01 droplet in the region of choice from the [control panel](https://cloud.digitalocean.com/login) in your account. The filesystem is irrelevant, it can be ZFS or UFS. Give it a few minutes to finish.
+Create a standard 1G FreeBSD 12.0 droplet in the region of choice from the [control panel](https://cloud.digitalocean.com/login) in your account. The filesystem is irrelevant, it can be either ZFS or UFS. Your droplet should be configured with a sudo user and proper SSH configuration.
 
 ## Step 2 - Attach the droplet to a cloud-firewall
 
-Upon creating our droplet we have no firewall enabled, therefore we risk being insecurely exposed to the open internet. For now we will attach our droplet to a [cloud-firewall](https://www.digitalocean.com/docs/networking/firewalls/quickstart) immediately before doing anything else. Later, after building our [PF](https://man.openbsd.org/pf) ruleset we will detach the droplet from the [cloud-firewall](https://www.digitalocean.com/docs/networking/firewalls/quickstart).
+Upon creating our droplet we have no firewall enabled, therefore we risk being insecurely exposed to the open internet. For now we will attach our droplet to a [cloud-firewall](https://www.digitalocean.com/docs/networking/firewalls/quickstart) before doing anything else. Later, after building our [PF](https://man.openbsd.org/pf) ruleset, we will detach the droplet from the [cloud-firewall](https://www.digitalocean.com/docs/networking/firewalls/quickstart).
 
 ## Step 3 - SSH into the droplet
 
-Obtain the ip address of the droplet from the [control panel](https://cloud.digitalocean.com/login) and SSH into it:
+Obtain the IP address of the droplet from the [control panel](https://cloud.digitalocean.com/login) and SSH into it:
 ```command
 ssh myuser@XXX.XXX.XX.XXX
 ```
 
 ## Step 3 - Build the preliminary ruleset
 
-There are two approaches to building a firewall ruleset: 1) default deny, or 2) default permit. The default deny approach blocks all traffic, and does not permit any traffic unless it is specified in a rule. The default permit approach does the exact opposite. It passes all traffic, and does not block any traffic unless it is specified in a rule. In this tutorial we will use the default deny approach.
+There are two approaches to building a firewall ruleset: 1) default deny, or 2) default permit. The *default deny* approach blocks all traffic, and does not permit any traffic unless it is specified in a rule. The *default permit* approach does the exact opposite. It passes all traffic, and does not block any traffic unless it is specified in a rule. In this tutorial we use the *default deny* approach.
 
-[PF](https://man.openbsd.org/pf) rulesets are written in a configuration file named `pf.conf`, and the default location is `/etc/pf.conf`. Storing it at a different location is perfectly fine, however, it will have to be specified in `/etc/rc.conf`. One alluring aspect of PF is that rulesets are nothing more than text files, which greatly simplifies the writing and editing processes. Loading a ruleset is achieved with a single command, and there are no delicate procedures required to load new rulesets. With PF's masterful design, the state of the firewall is irrelevant. Simply load the new ruleset and the old one is gone. There is rarely ever a need to flush an existing ruleset, and it is generally considered a bad idea.
+[PF](https://man.openbsd.org/pf) rulesets are written in a configuration file named `/etc/pf.conf`, which is the default location. It is okay to store it somewhere else, but that will have to be specified in `/etc/rc.conf`.
 
 Create `/etc/pf.conf`:
 ```command
 sudo vim /etc/pf.conf
 ```
 
-[PF](https://man.openbsd.org/pf) filters packets according to three core concepts: **block**, **pass**, and **match**. These actions are taken when the contents of a packet header meets the criteria of the rules we write, and the parameters we specify. We use the terms *action* and *rule* interchangeably when discussing **block**, **pass**, or **match**. The **pass** and **block** rules, as one might expect, pass and block traffic. The **match** rule performs an action on a packet without actually filtering it. For example we can perform network address translation (NAT) on a packet without passing it or blocking it.
+[PF](https://man.openbsd.org/pf) filters packets according to three core concepts: **block**, **pass**, and **match**. These actions are taken when the contents of a packet header meets the criteria of the rules we write, and the parameters we specify. We use the terms *action* and *rule* interchangeably when discussing **block**, **pass**, or **match**. The **pass** and **block** rules, as one might expect, pass and block traffic. The **match** rule performs an action on a packet without actually filtering it. For example we could perform network address translation (NAT) on a packet without moving it anywhere. We would move it, or filter it, with another rule that uses **pass** or **block**. Let's begin our ruleset by blocking everything.
 
-Let's begin by blocking everything:
+Add the following to `/etc/pf.conf`:
 ```
 block all
 ```
 
-This rule blocks all forms of traffic in either direction. Notice our **block** rule does not specify an **in** or **out** direction, which is why it defaults to both. The same logic applies to the **pass** and **match** actions. 
+This rule blocks all forms of traffic in either direction. Our **block** rule does not specify an **in** or **out** direction, so it defaults to both. The same logic applies to **pass** and **match** actions. 
 
-Our first rule is perfectly legitimate for a local workstation that needs to be completely insulated from the world, however, it is largely impractical for a local workstation, and will certainly not work with a remote droplet because it does not permit **SSH** traffic. If [PF](https://man.openbsd.org/pf) had been enabled, this rule would have locked us out of our machine. This is something to always keep in mind with building rulesets. Every administrator has probably done this at least once! Let's create a more practical starting point.
+This rule is perfectly legitimate for a local workstation that needs to be insulated from the world, however, it is largely impractical, and will not work with a remote droplet. Can you guess why? The reason is because we did not permit any **SSH** traffic. If this rule had been implemented, we would have locked ourselves out of our droplet. This is something to always keep in mind with remote machines. Every administrator has probably done this at least once! Let's create a more practical starting point.
 
 Update the previous rule:
 ```
@@ -64,20 +64,20 @@ block all
 pass in proto tcp to port ssh
 ```
 
-For the most part, using port numbers versus protocol names is a choice of style. For the sake of consistency we will use port numbers, unless there is a valid reason to do otherwise. There is a detailed list of protocols and their respective port numbers in the `/etc/services` file, which you are highly encouraged to view.
+Using port numbers versus protocol names is largely a choice of style. For the sake of consistency we will use port numbers, unless there is a reason to do otherwise. There is a detailed list of protocols and their respective port numbers in the `/etc/services` file which you are highly encouraged to look at.
 
-PF rulesets are processed from top-to-bottom, therefore our ruleset initially blocks all forms of traffic, but then passes it if the criteria on the next line is matched, which in this case is **SSH** traffic.
+[PF](https://man.openbsd.org/pf) processes rules from top-to-bottom, therefore our ruleset initially blocks all forms of traffic, but then passes it if the criteria on the next line is matched, which in this case is **SSH** traffic.
 
-We can now **SSH** into our droplet, but we are still blocking all forms of outgoing traffic, which will be problematic on our droplet becuase we will not be able to install packages, get accurate time settings, and more.
+We can now **SSH** into our droplet, but we are still blocking all forms of outgoing traffic, which will be problematic on our droplet becuase we will not be able to install packages, get accurate time settings, etc.
 
-Add two **pass out** rules:
+Allow some outward traffic:
 ```
 block all
 pass out proto tcp to port { 22 53 80 123 443 }
 pass out proto udp to port { 53 123 }
 ```
 
-Our ruleset now permits **SSH, HTTP, DNS, NTP, and HTTPS** traffic in the outward direction, and blocks all traffic from the outside world. This keeps us safe while providing access to some critical services from the internet. Notice we placed the port numbers inside of the curly brackets. This is a **list** in [PF](https://man.openbsd.org/pf) syntax. Notice we added the **pass out** rule for the **UDP** protocol on ports **53** and **123**. This is because **DNS** and **NTP** will occasionally toggle between both protocols. Do some Google searching on that topic. 
+Our ruleset now permits **SSH, HTTP, DNS, NTP, and HTTPS** traffic in the outward direction, and blocks all traffic from the outside world. This keeps us safe while providing access to some critical services. Notice we placed the port numbers inside of the curly brackets. This is a **list** in [PF](https://man.openbsd.org/pf) syntax. Also notice that we added the **pass out** rule for the **UDP** protocol on ports **53** and **123**. This is because **DNS** and **NTP** will occasionally toggle between both protocols. Do some Google searching on that topic. 
 
 We're just about finished with our preliminary ruleset but still need to add some final touches.
 
@@ -85,21 +85,20 @@ Complete the preliminary ruleset:
 ```
 set skip on lo0
 block all
-pass in proto tcp to port { 22 }
+pass in proto tcp to port { 22 } tag SSH
 pass out proto tcp to port { 22 53 80 123 443 }
 pass out proto udp to port { 53 123 }
 pass out inet proto icmp icmp-type { echoreq }
 ```
 
-We added the `set skip` rule on our loopback device because it is unnecessary and will bog down the system. We also added a **pass out inet** rule for the **ICMP** messaging protocol, which will allow us to use [ping(8)](https://www.freebsd.org/cgi/man.cgi?query=ping&sektion=8&manpath=freebsd-release-ports) for troubleshooting purposes. The **inet** option is represents the address family IPv4.
+We added the `set skip` rule on our loopback device because it does not need to filter traffic. We also added a **tag** on our **SSH** rule which will mark packets with the string "SSH" if they pass that rule. This will improve visibility in log files and for troubleshooting. Finally, we added a **pass out inet** rule for the **ICMP** messaging protocol, which will allow us to use [ping(8)](https://www.freebsd.org/cgi/man.cgi?query=ping&sektion=8&manpath=freebsd-release-ports) for troubleshooting purposes. The **inet** option represents the **IPv4** address family.
 
-ICMP is an often controversial protocol that is fraught with many assumptions, however, as long as it is approached with care there is no harm in using it. We just want to use [ping(8)](https://www.freebsd.org/cgi/man.cgi?query=ping&sektion=8&manpath=freebsd-release-ports), that's it. The [ping(8)](https://www.freebsd.org/cgi/man.cgi?query=ping&sektion=8&manpath=freebsd-release-ports) utility relies on ICMP *echo messages*. Therefore in our **pass out inet** rule we *only* permit messages of type *echoreq*, which is the abbreviation code for *echo messages* in the [icmp(4)](https://www.freebsd.org/cgi/man.cgi?query=icmp&sektion=4&apropos=0&manpath=FreeBSD+12.0-RELEASE+and+Ports) protocol. Every other type of message will be blocked in both directions. You many have noticed that [PF](https://man.openbsd.org/pf) lets us incorporate these codes directly in our ruleset. Yes it does! See `man icmp`.
+ICMP is an often controversial protocol that is fraught with many assumptions. As long as it is approached with care there is no harm in using it. For now, we just want to use [ping(8)](https://www.freebsd.org/cgi/man.cgi?query=ping&sektion=8&manpath=freebsd-release-ports) with a droplet, that's it. The [ping(8)](https://www.freebsd.org/cgi/man.cgi?query=ping&sektion=8&manpath=freebsd-release-ports) utility relies on ICMP *echo messages*. Therefore in our **pass out inet** rule we *only* permit messages of type *echoreq*, which is the abbreviation code for *echo messages* in the [icmp(4)](https://www.freebsd.org/cgi/man.cgi?query=icmp&sektion=4&apropos=0&manpath=FreeBSD+12.0-RELEASE+and+Ports) protocol. Every other type of **ICMP** message will be blocked in both directions. If we need to add more message types in the future we can easily do that. You may have noticed that [PF](https://man.openbsd.org/pf) allowed us to incorporate codes directly from the [icmp(4)](https://www.freebsd.org/cgi/man.cgi?query=icmp&sektion=4&apropos=0&manpath=FreeBSD+12.0-RELEASE+and+Ports) protocol. Yes it did! See `man icmp` for additional codes.
 
-In case you are concerned about *state*, [PF](https://man.openbsd.org/pf) filters traffic statefully by default. It stores information about connections in a *state table*. [PF](https://man.openbsd.org/pf) knows when packets are affiliated with a previously established connection. That is why we can safely make outward connections to the internet.
 
-## Step 4 - Test our preliminary ruleset
+## Step 4 - Test the preliminary ruleset
 
-Although we are far from finished, we have a working ruleset that provides adequate protection to a fresh droplet. That said, let's test our ruleset before we get too far. Rulesets are loaded with the [pfctl](https://man.openbsd.org/pfctl) utility, which is the default command-line tool that ships with [PF](https://man.openbsd.org/pf).
+Although we are far from finished, we have a working ruleset that provides basic protection to a fresh droplet. That said, let's test it before we get too far. Rulesets are loaded with the [pfctl](https://man.openbsd.org/pfctl) utility, which is the default command-line tool that ships with [PF](https://man.openbsd.org/pf).
 
 Enable [PF](https://man.openbsd.org/pf) in `/etc/rc.conf`:
 ```command
@@ -124,7 +123,7 @@ Reboot the droplet again:
 sudo reboot
 ```
 
-Detach the droplet from your [cloud-firewall](https://www.digitalocean.com/docs/networking/firewalls/quickstart) from the [control panel](https://cloud.digitalocean.com/login) in your account. The connection will be dropped. [PF](https://man.openbsd.org/pf) is now the active firewall. Give it a few minutes to update.
+Detach the droplet from your [cloud-firewall](https://www.digitalocean.com/docs/networking/firewalls/quickstart) from the [control panel](https://cloud.digitalocean.com/login) in your account. The connection will be dropped. [PF](https://man.openbsd.org/pf) is now the acting firewall. Give it a few minutes to update.
 
 SSH back into the droplet:
 ```command
@@ -150,13 +149,13 @@ If any packages need to be upgraded, go ahead and do that. If all of these servi
 
 ## Step 5 - Complete the base ruleset
 
-Here we will complete the base ruleset. Please note that rules in [PF](https://man.openbsd.org/pf) must be written in a specific order, and it is easy to get lost. If you find yourself getting confused in the order of things, refer to the complete base ruleset at step 8.
+Here we will complete the base ruleset. Rules in [PF](https://man.openbsd.org/pf) must be written in a specific order. If you find yourself getting confused in the order of things, simply refer to the complete base ruleset at step 8.
 
 ### Incorporate macros and tables
 
-In our preliminary ruleset above we hard coded all of our parameters, i.e., the port numbers. This will become unmanageable as the ruleset expands. For organizational purposes [PF](https://man.openbsd.org/pf) offers **macros**, **lists**, and **tables**. We've already used lists, which were the port numbers inside of the curly brackets. We can also assign lists, or single values, to a variable using **macros**. Let's reorganize our parameters.
+In our preliminary ruleset we hard coded all of our parameters into each rule, i.e., the port numbers. This will become unmanageable as our ruleset expands. For organizational purposes [PF](https://man.openbsd.org/pf) offers **macros**, **lists**, and **tables**. We've already used lists, which were the port numbers inside of the curly brackets. We can also assign a **list**, or even a single value, to a variable using **macros**. Let's reorganize our parameters.
 
-Create the macros:
+Move our parameters into macros:
 ```
 ext_if = "vtnet0"
 tcp_services= "{ 22 53 80 123 443 }"
@@ -164,9 +163,9 @@ udp_services= "{ 53 123 }"
 icmp_messages= "{ echoreq }"
 ```
 
-Now we can call the variable names inside of a rule instead of the parameters. This makes our ruleset easier read, and easier to expand. Notice we also added a macro for our network interface **vtnet0**, which is the default interface on a singleton Digital Ocean droplet.
+Now we can call the variable names inside of a rule instead of the parameters, i.e., `$tcp_services`. This makes our ruleset easier read and expand. Another macro was created for our network interface **vtnet0**, which is the default interface on a single FreeBSD droplet.
 
-[PF](https://man.openbsd.org/pf) also provides **tables**, which are similar to macros, but they are designed to hold groups of IP addresses. Let's create a **table** for non-routable IP addresses that have no business traveling through the internet. Non-routable IP addresses often play a role in Denial of Service attacks (DOS). Our droplet should not send or receive packets containing these source addressess. For our **table** we will use all of the IP addresses that are specified in [RFC6890](https://tools.ietf.org/html/rfc6890), which defines special-purpose IP address registries.
+We can also use **tables**, which are similar to macros, but they are designed to hold groups of IP addresses. Let's create a **table** for non-routable IP addresses that have no business traveling through the internet. Non-routable IP addresses often play a role in Denial of Service attacks (DOS). Our droplet should not send or receive packets containing these source addressess. For our **table** we will use all of the IP addresses specified in [RFC6890](https://tools.ietf.org/html/rfc6890), which defines special-purpose IP address registries.
 
 Create the table:
 ```
@@ -178,11 +177,11 @@ table <rfc6890> { 0.0.0.0/8 10.0.0.0/8 100.64.0.0/10 127.0.0.0/8 169.254.0.0/16 
 
 ### Traffic normalization
 
-Traffic normalization is a broad term that refers to the handling of various packet discrepancies. Packets often arrive fragmented, with erroneous TCP flag combinations, or with bogus IP addresses (spoofed). Some of these issues originate from malicious actors, others are the result of the many implementations of the TCP/IP protocol suite. Fragmented packets are the source of myriad security exploits. For our purposes, our discussion of traffic normalization will include scrubbing, antispoofing, and creating rules against our `table <rfc6890>`.
+Traffic normalization is a broad term that refers to the handling of various packet discrepancies. Packets often arrive fragmented, with erroneous TCP flag combinations, or with bogus IP addresses (spoofed). Some of these issues originate from malicious actors, others are the result of the many implementations of the TCP/IP protocol suite. Fragmented packets are the source of myriad security exploits. For our purposes, we discuss scrubbing, antispoofing, and creating rules against our `table <rfc6890>`.
 
 ### Scrubbing
 
-[PF](https://man.openbsd.org/pf) provides a **scrub** keyword to handle packet fragmentation issues. It will re-assemble fragmented packets, discard any cruft, and drop packets that have erroneous TCP flag combinations. We want to subject all incoming packets to a **scrub** rule. 
+[PF](https://man.openbsd.org/pf) provides a **scrub** keyword to handle packet fragmentation. It will re-assemble fragmented packets, discard any cruft, and drop packets that have erroneous TCP flag combinations. We want to subject all incoming packets to a **scrub** rule. 
 
 Add the **scrub** rule:
 ```
@@ -193,7 +192,7 @@ Please be aware that some applications require special attention in regards to s
 
 ### Antispoofing
 
-Spoofing is the practice of using fake IP addresses to disguise the real host address, typically for malicious purposes. [PF](https://man.openbsd.org/pf) knows when certain IP addresses are traveling in directions that are impossible, and has a built-in keyword to deal with them.
+Spoofing is the practice of using fake IP addresses to disguise the real host address, typically for malicious purposes. [PF](https://man.openbsd.org/pf) knows when certain IP addresses are traveling in directions that are impossible, and has a built-in keyword to deal with them quickly.
 
 Add antispoofing:
 ```
@@ -206,7 +205,7 @@ We also introduced the **quick** keyword, which tells [PF](https://man.openbsd.o
 
 We created the `table <rfc6890>`, but we still have to create rules against it. We want to block all IP addresses from this table in both directions, not only from the outside world, but internally as well. Our droplets should not attempt to make connections to these IP addresses under any circumstances.
 
-Block IP addresses from table <rfc6890>:
+Create rules against table <rfc6890>:
 ```
 block in quick on egress from <rfc6890>
 block return out quick on egress to <rfc6890>
@@ -214,9 +213,9 @@ block return out quick on egress to <rfc6890>
 
 We also introduced the **return** option, which compliments our **block out** rule. The **block return out** rule will drop the packet, and also send an RST message to the host that attempted to make this connection. Finally, we introduced the **egress** keyword, which automatically finds the default route. This is often a cleaner method of finding the default route, especially on complex networks.
 
-## Step 6 - Review and test the base ruleset
+## Step 6 - Review the base ruleset
 
-We now have a complete base ruleset that can serve as a formidable starting point for new droplets. Our ruleset is easy to read and can easily be expanded. To summarize our ruleset, we currently permit inbound **SSH** traffic, have some nice network hygiene measures in place, and have access to some critical services that safely bring our droplets into an operational state. For the sake of tidiness, from here forward we will no longer rewrite the entire ruleset as we expand on it. Instead we have included complete sample rulesets at the end of the tutorial. Feel free to look at them anytime.
+We now have a complete base ruleset that can serve as a formidable starting point for new droplets. We currently permit inbound **SSH** traffic, have some network hygiene measures in place, and we can access to some critical services that safely bring our droplet into an operational state. For the sake of tidiness, from here forward we will no longer rewrite the entire ruleset as we expand on it. Instead we have included complete ruleset examples at the end of the tutorial. Feel free to reference them anytime.
 
 Here is our complete base ruleset:
 ```
@@ -243,7 +242,7 @@ pass inet proto icmp icmp-type $icmp4_messages
 
 ## Step 6 - Test the base ruleset
 
-We can take a test run using `pfctl -nvf /etc/pf.conf`, which will not actually load the new ruleset, but throw an error if something is wrong. When you run this command the rules look much different. In reality, this is what our rules really look like in their full-form. [PF](https://man.openbsd.org/pf) allows us to write shortcut versions of our rules for readability purposes, which is how we have written our base ruleset. Viewing the rules in their full-form with `pfctl -nvf /etc/pf.conf` is a good way to learn the [PF](https://man.openbsd.org/pf) syntax.
+We can take a test run using `pfctl -nvf /etc/pf.conf`, which will not actually load the new ruleset, but throw an error if something is wrong. When you run this command the rules look much different. In reality, this is what the rules look like in their full-form. [PF](https://man.openbsd.org/pf) allows us to write shortcut versions of rules for readability purposes, which is how we have structured our rules thus far. Viewing the rules in their full-form with `pfctl -nvf /etc/pf.conf` is a good way to learn the [PF](https://man.openbsd.org/pf) syntax.
 
 Take a test run:
 ```command 
@@ -276,12 +275,18 @@ sudo pkg upgrade
 
 If there are any packages to update, go ahead and do that.
 
+Reboot the droplet:
+```command
+sudo reboot
+```
 
 ## Step 7 - Introduce anchors
 
-[PF](https://man.openbsd.org/pf) provides **anchors**, which allow us to source rules into the main ruleset, either on-the-fly with `pfctl`, or with an external text file. Here we will discuss **anchors** without actually adding them into our base ruleset. We will demonstrate their usefulness with our table <rf6890>. Instead of placing table <rfc6890>, and its corresponding rules, in the ruleset, we could have written them in an external text file, and called them from the ruleset with an anchor.
+[PF](https://man.openbsd.org/pf) **anchors** are used to source rules into the main ruleset, either on-the-fly with `pfctl`, or with an external text file. Here we will introduce **anchors** without actually adding them to our ruleset. We will demonstrate their usefulness with our **table <rf6890>**. 
 
-Create a file called `/etc/non_routes`:
+Instead of placing a table at the top of a ruleset, we can place them, or any other rule snippets, in an external text file, and called them from an anchor.
+
+Create a file named `/etc/non_routes`:
 ```command
 sudo vim /etc/non_routes
 ```
@@ -311,7 +316,12 @@ block all
 *--snip--*
 ```
 
-One extremely intelligent feature of anchors is their ability to insert rules into a running ruleset on-the-fly without having to reload it. This can be useful for testing, quick-fixes, emergencies, etc. For example, let's imagine that a remote host is acting strange and we want to block it without formally adding a rule to the main ruleset. Instead we can add an anchor just below the **block all** rule. We'll name it `rogue_host`
+Reload the ruleset:
+```command
+sudo pfctl -f /etc/pf.conf
+```
+
+One extremely intelligent feature of anchors is their ability to insert rules into a running ruleset on-the-fly without having to reload it. This can be useful for testing, quick-fixes, emergencies, etc. For example, let's imagine that a remote host is acting strange and we want to block it without formally adding a rule to the main ruleset. Instead we can place an anchor just below the **block all** rule. We'll name it `strange_hosts`
 
 Add the anchor:
 ```
@@ -322,13 +332,18 @@ antispoof quick for $ext_if
 block in quick on $ext_if from <rfc6890> 
 block return out quick on egress to <rfc6890>
 block all
-anchor rogue_host
+anchor strange_host
 *--snip--*
 ```
 
-Block the rogue host from the command-line:
+Reload the ruleset:
 ```command
-sudo echo "block in quick from XXX.XXX.XX.X" | pfctl -a rogue_host -f -
+sudo pfctl -f /etc/pf.conf
+```
+
+Block the host from the command-line:
+```command
+sudo sh -c 'echo "block in quick from XXX.XXX.XX.X" | pfctl -a strange_host -f -'
 ```
 
 There are many pros and cons to using anchors, all of them are completely situational. Anchors may help reduce clutter in a ruleset by breaking it up into separate text files, however, managing multiple files might be cumbersome and hard to read. Anchors can be useful for adding rules on-the-fly, however, someone has to be present to add those rules. In other scenarios anchors are necessary for third party tools that are designed to integrate with [PF](https://man.openbsd.org/pf).
@@ -347,7 +362,7 @@ table <blackhats> persist
 Modify our previous SSH rule:
 ```
 pass in proto tcp to port { 22 } \
-    keep state (max-src-conn 10, max-src-conn-rate 3/1, \
+    keep state (max-src-conn 15, max-src-conn-rate 3/1, \
         overload <blackhats> flush global)
 ```
 
@@ -481,14 +496,12 @@ To create logs we add the **log** keyword to any of our rules. [PF](https://man.
 
 ### Labeling packets with tags
 
-It is possible to tag packets for troubleshooting and organizational purposes.
+Before diving into logging, we should quickly introduce a small but useful feature known as **tags**. We can **tag** so that they will be marked, which will improve their visibility in log files and troubleshooting. The rule below will attach the string "WEB" to any packet that matches it. We actually added a tag on our SSH rule in the main ruleset above.
 
-Tag our SSH rule:
+Tag a web services rule:
 ```
-pass in proto tcp to port { 22 } tag SSH
+pass proto tcp to port { 80 443 } tag WEB
 ```
-
-Any packet that matches the above rule will be tagged with "SSH". The tag will act as a marker, providing better visibility to packets when logging, troubleshooting, etc.
 
 ### Accessing log data with tcpdump
 
@@ -544,7 +557,6 @@ It will display something like this:
 PR    DIR SRC                   DEST                           STATE                AGE       EXP   PKTS BYTES
 tcp   In  251.155.237.90:27537  157.225.173.58:22     ESTABLISHED:ESTABLISHED  00:12:35  23:59:55   1890  265K
 tcp   In  222.186.42.15:25884   157.225.173.58:22       TIME_WAIT:TIME_WAIT    00:01:25  00:00:06     22  3801
-tcp   In  222.185.15.217:17359  157.225.173.58:22       TIME_WAIT:TIME_WAIT    00:00:14  00:01:17     22  3801
 udp   Out 157.245.171.59:4699   67.203.62.5:53           MULTIPLE:SINGLE       00:00:14  00:00:16      2   227
 ```
 
@@ -669,6 +681,15 @@ pass out proto tcp to port $tcp_services
 pass out proto udp to port $udp_services
 pass inet proto icmp icmp-type $icmp4_messages
 ```
+
+
+
+One alluring aspect of PF is that rulesets are nothing more than text files, which greatly simplifies the writing and editing processes. Loading a ruleset is achieved with a single command, and there are no delicate procedures required to load new rulesets. With PF's masterful design, the state of the firewall is irrelevant. Simply load the new ruleset and the old one is gone. There is rarely ever a need to flush an existing ruleset, and it is generally considered a bad idea.
+
+
+In case you were wondering, [PF](https://man.openbsd.org/pf) filters traffic *statefully* by default. It stores information about connections in a *state table*. [PF](https://man.openbsd.org/pf) knows when packets are affiliated with an established connection. That is why we can safely make outward connections to the internet.
+
+
 
 
 
