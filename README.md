@@ -15,7 +15,7 @@ In this tutorial we build a firewall from the ground up on a FreeBSD 12.0 drople
 
 ## Step 1 - Create the droplet
 
-Create a standard 1G FreeBSD 12.0 droplet in the region of choice from the [control panel](https://cloud.digitalocean.com/login) in your account. The filesystem is irrelevant, it can be ZFS or UFS. Your droplet should be configured with a **sudo** user, and proper SSH access. Public-key authentication is *strongly* recommended.
+Create a standard 1G FreeBSD 12.0 droplet in the region of choice from the [control panel](https://cloud.digitalocean.com/login) in your account. The filesystem is irrelevant, it can be ZFS or UFS. Your droplet should be configured with a **sudo** user, and proper SSH access. *Public-key authentication* is strongly recommended.
 
 ## Step 2 - Attach the droplet to a cloud-firewall
 
@@ -89,12 +89,12 @@ pass out inet proto icmp icmp-type { echoreq }
 
 We added the `set skip` rule on our loopback device because it does not need to filter traffic. We also added a *tag* on our *SSH* rule which will label packets with the string *"SSH"* if they pass this rule. Finally, we added a *pass out inet* rule for the *ICMP* messaging protocol, which allows us to use the [ping(8)](https://www.freebsd.org/cgi/man.cgi?query=ping&sektion=8&manpath=freebsd-release-ports) utility for troubleshooting purposes. The *inet* option represents the *IPv4* address family.
 
-ICMP is an often controversial protocol that is fraught with many assumptions. As long as it is approached with care there is no harm in using it. We just want to use [ping(8)](https://www.freebsd.org/cgi/man.cgi?query=ping&sektion=8&manpath=freebsd-release-ports) with a droplet, that's it. The [ping(8)](https://www.freebsd.org/cgi/man.cgi?query=ping&sektion=8&manpath=freebsd-release-ports) utility relies on [icmp(4)](https://www.freebsd.org/cgi/man.cgi?query=icmp&sektion=4&apropos=0&manpath=FreeBSD+12.0-RELEASE+and+Ports) *echo messages*. Therefore in our *pass out inet* rule we only permit messages of type *echoreq*. Every other type of message will be blocked in all directions. If we need more message types in the future, we can easily add them. You may have noticed that [PF](https://www.freebsd.org/cgi/man.cgi?query=pf&apropos=0&sektion=0&manpath=FreeBSD+12.0-RELEASE+and+Ports&arch=default&format=html) allowed us to incorporate these codes directly from the [icmp(4)](https://www.freebsd.org/cgi/man.cgi?query=icmp&sektion=4&apropos=0&manpath=FreeBSD+12.0-RELEASE+and+Ports) protocol. Yes it did! See `man icmp` for additional codes.
+*ICMP* is an often controversial protocol that is fraught with many assumptions. As long as it is approached with care there is no harm in using it. We just want to use [ping(8)](https://www.freebsd.org/cgi/man.cgi?query=ping&sektion=8&manpath=freebsd-release-ports) with a droplet, that's it. The [ping(8)](https://www.freebsd.org/cgi/man.cgi?query=ping&sektion=8&manpath=freebsd-release-ports) utility relies on [icmp(4)](https://www.freebsd.org/cgi/man.cgi?query=icmp&sektion=4&apropos=0&manpath=FreeBSD+12.0-RELEASE+and+Ports) *echo messages*. Therefore in our `pass out inet` rule we only permit messages of type *echoreq*. Every other type of message will be blocked in all directions. If we need more message types in the future, we can easily add them. You may have noticed that [PF](https://www.freebsd.org/cgi/man.cgi?query=pf&apropos=0&sektion=0&manpath=FreeBSD+12.0-RELEASE+and+Ports&arch=default&format=html) allowed us to incorporate these codes directly from the [icmp(4)](https://www.freebsd.org/cgi/man.cgi?query=icmp&sektion=4&apropos=0&manpath=FreeBSD+12.0-RELEASE+and+Ports) protocol. Yes it did! See `man icmp` for additional codes.
 
 
 ## Step 5 - Test the preliminary ruleset
 
-We have a working ruleset that can provide basic protection and functionality. Let's test it before we get too far. Rulesets are loaded with the [pfctl](https://www.freebsd.org/cgi/man.cgi?query=pfctl&apropos=0&sektion=0&manpath=FreeBSD+12.0-RELEASE+and+Ports&arch=default&format=html) utility, which is a built-in command-line tool. [PF](https://www.freebsd.org/cgi/man.cgi?query=pf&apropos=0&sektion=0&manpath=FreeBSD+12.0-RELEASE+and+Ports&arch=default&format=html) rulesets are nothing more than text files, which greatly simplifies the process. There are no delicate procedures involved with loading a new ruleset, simply load it and the old one is gone. There is rarely ever a need to flush an existing ruleset, and it is generally a bad idea.
+We have a working ruleset that can provide basic protection and functionality. Let's test it before we get too far. Rulesets are loaded with the [pfctl](https://www.freebsd.org/cgi/man.cgi?query=pfctl&apropos=0&sektion=0&manpath=FreeBSD+12.0-RELEASE+and+Ports&arch=default&format=html) utility, which is a built-in command-line tool. [PF](https://www.freebsd.org/cgi/man.cgi?query=pf&apropos=0&sektion=0&manpath=FreeBSD+12.0-RELEASE+and+Ports&arch=default&format=html) rulesets are nothing more than text files, which greatly simplifies the process. There are no delicate procedures involved with loading a new ruleset, simply load it and the old one is gone. There is rarely ever a need to flush an existing ruleset, and it is generally considered a bad idea.
 
 Enable [PF](https://www.freebsd.org/cgi/man.cgi?query=pf&apropos=0&sektion=0&manpath=FreeBSD+12.0-RELEASE+and+Ports&arch=default&format=html):
 ```command
@@ -154,7 +154,7 @@ If any packages need to be upgraded, go ahead and do that. If all of these servi
 
 ## Step 6 - Complete the base ruleset
 
-Here we will complete the base ruleset. Rules in [PF](https://www.freebsd.org/cgi/man.cgi?query=pf&apropos=0&sektion=0&manpath=FreeBSD+12.0-RELEASE+and+Ports&arch=default&format=html) are structured in a specific sequence: 1) options, 2) normalization, 3) queueing, 4) translation, and 5) filtering. If you find yourself getting confused in the order of things, refer to the sample rulesets at step 7, and at the end of the tutorial.
+Here we will complete the base ruleset. Rules in [PF](https://www.freebsd.org/cgi/man.cgi?query=pf&apropos=0&sektion=0&manpath=FreeBSD+12.0-RELEASE+and+Ports&arch=default&format=html) are structured in a specific sequence: 1) options, 2) normalization, 3) queueing, 4) translation, and 5) filtering. If you find yourself getting confused in the order of things, refer to the sample rulesets either at step 7, or at the end of the tutorial.
 
 ### Incorporate macros and tables
 
@@ -170,14 +170,14 @@ icmp_messages= "{ echoreq }"
 
 Now we can call the variable names in our rules, i.e., `$tcp_services`. 
 
-Our previous rules now look like this:
+Our previous filter rules will now look like this:
 ```
 pass out proto tcp to port $tcp_services
 pass out proto udp to port $udp_services
 pass inet proto icmp icmp-type $icmp4_messages
 ```
 
-Next we implement a *table*, which is similar to a *macro*, but designed to hold groups of IP addresses. Let's create a *table* for non-routable IP addresses, which often play a role in *denial of service attacks (DOS)*. Our droplet should not send or receive packets to or from these IP addresses. In our *table* we use the IP addresses specified in [RFC6890](https://tools.ietf.org/html/rfc6890), which defines special-purpose IP address registries.
+Next we implement a *table*, which is similar to a *macro*, but designed to hold groups of IP addresses. Let's create a *table* for non-routable IP addresses, which often play a role in *denial of service attacks (DOS)*. Our droplet should not send or receive packets to-or-from these IP addresses. In our table we use the IP addresses specified in [RFC6890](https://tools.ietf.org/html/rfc6890), which defines special-purpose IP address registries.
 
 Add the table:
 ```
@@ -193,7 +193,7 @@ table <rfc6890> { 0.0.0.0/8 10.0.0.0/8 100.64.0.0/10 127.0.0.0/8 169.254.0.0/16 
 
 ### Scrubbing
 
-[PF](https://www.freebsd.org/cgi/man.cgi?query=pf&apropos=0&sektion=0&manpath=FreeBSD+12.0-RELEASE+and+Ports&arch=default&format=html) provides a `scrub` keyword to handle packet fragmentation. It will re-assemble fragmented packets, discard any cruft, and drop packets that have erroneous TCP flag combinations. We want to subject all incoming traffic to a `scrub` rule. 
+[PF](https://www.freebsd.org/cgi/man.cgi?query=pf&apropos=0&sektion=0&manpath=FreeBSD+12.0-RELEASE+and+Ports&arch=default&format=html) provides a `scrub` keyword to handle *packet fragmentation*. It re-assembles fragmented packets, discard any cruft, and drop packets that have erroneous TCP flag combinations. We want to subject all incoming traffic to a `scrub` rule. 
 
 Add a `scrub` rule:
 ```
@@ -206,16 +206,16 @@ For most purposes the above rule works fine. Please be aware, however, that some
 
 *Spoofing* is the practices of using a fake IP address to disguise a real address, typically for malicious purposes. [PF](https://www.freebsd.org/cgi/man.cgi?query=pf&apropos=0&sektion=0&manpath=FreeBSD+12.0-RELEASE+and+Ports&arch=default&format=html) knows when certain IP addresses are traveling in directions that are impossible. It has a built-in *antispoofing* mechanism that deals with these packets quickly.
 
-Add *antispoofing*:
+Add antispoofing:
 ```
 antispoof quick for $ext_if
 ```
 
-We also introduced the `quick` keyword, which executes a rule without doing any further processing of the remainder of the ruleset. This is desirable for handling false IP addresses because we want to drop those packets immediately, and have no reason to process the entire ruleset.
+We also introduced the `quick` keyword, which executes a rule without doing any further processing of the remainder of the ruleset. This is desirable for handling false IP addresses because we want to drop those packets immediately, and have no reason to process the rest of the ruleset.
 
 ### Blocking non-routable IP addresses
 
-Previously we created the `table <rfc6890>`, but have not created any rules against it.
+Previously we created the `table <rfc6890>`, but did not create any rules against it.
 
 Create rules against `table <rfc6890>`:
 ```
@@ -253,7 +253,7 @@ pass out proto udp to port $udp_services
 pass inet proto icmp icmp-type $icmp4_messages
 ```
 
-Your `/etc/pf.conf` should now look identical to the ruleset above.
+Be sure that your `/etc/pf.conf` is identical to the ruleset above before continuing.
 
 Take a test run:
 ```command
@@ -262,14 +262,14 @@ sudo pfctl -nf /etc/pf.conf
 
 There should be no errors.
 
-This runs the ruleset without loading it, and throws error messages if something is wrong.
+The `-nf` flags tell `pfctl` to run the ruleset without loading it, and will throw errors if anything is wrong.
 
 Use the verbose option:
 ```command
 sudo pfctl -nvf /etc/pf.conf 
 ```
 
-This will print the rules in their full-form, which is what they really look like. [PF](https://www.freebsd.org/cgi/man.cgi?query=pf&apropos=0&sektion=0&manpath=FreeBSD+12.0-RELEASE+and+Ports&arch=default&format=html) lets us write shortcut versions of rules for readability, which is what we have done thus far. Viewing the rules in their full-form is a good way to learn the [PF](https://www.freebsd.org/cgi/man.cgi?query=pf&apropos=0&sektion=0&manpath=FreeBSD+12.0-RELEASE+and+Ports&arch=default&format=html) syntax.
+This will print the rules in their full-form, which is what the rules actually look like in their full-form. [PF](https://www.freebsd.org/cgi/man.cgi?query=pf&apropos=0&sektion=0&manpath=FreeBSD+12.0-RELEASE+and+Ports&arch=default&format=html) lets us write shortcut versions of rules for readability, which is what we have done thus far. Viewing the rules in their full-form is a good way to learn the [PF](https://www.freebsd.org/cgi/man.cgi?query=pf&apropos=0&sektion=0&manpath=FreeBSD+12.0-RELEASE+and+Ports&arch=default&format=html) syntax.
 
 Load the ruleset:
 ```command
@@ -281,7 +281,7 @@ Test internet connectivity:
 ping 8.8.8.8
 ```
 
-Test *DNS* by updating the `pkgs` repository:
+Test DNS by updating the `pkgs` repository:
 ```command
 sudo pkg upgrade
 ```
