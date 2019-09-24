@@ -303,38 +303,35 @@ The connection will be dropped. Give it a few minutes to update.
 
 ## Step 8 - Introduce anchors (optional)
 
-[PF](https://www.freebsd.org/cgi/man.cgi?query=pf&apropos=0&sektion=0&manpath=FreeBSD+12.0-RELEASE+and+Ports&arch=default&format=html) *anchors* are for sourcing rules into the main ruleset, either on-the-fly with `pfctl`, or with an external text file. We can demonstrate this with our `table <rf6890>`. Instead of writing it in the main ruleset, we can write it to an external text file, and call it from an anchor. This applies not only to tables, but to any rule snippet.
+*Anchors* are used for sourcing rules into the main ruleset, either on-the-fly with `pfctl`, or from an external text file. Let's demonstrate this by loading another table into our ruleset from an anchor.
 
-Create a file named `/etc/non_routes`:
+Create a file named `/etc/banned`:
 ```command
-sudo vim /etc/non_routes
+sudo vim /etc/banned
 ```
 
-Move the following code to `/etc/non_routes`:
+Add the table:
 ```
-ext_if = "vtnet0"
-
-table <rfc6890> { 0.0.0.0/8 10.0.0.0/8 100.64.0.0/10 127.0.0.0/8 169.254.0.0/16          \
-                  172.16.0.0/12 192.0.0.0/24 192.0.0.0/29 192.0.2.0/24 192.88.99.0/24    \
-                  192.168.0.0/16 198.18.0.0/15 198.51.100.0/24 203.0.113.0/24            \
-                  240.0.0.0/4 255.255.255.255/32 }
-
-block in quick on $ext_if from <rfc6890> 
-block return out quick on egress to <rfc6890>
+table <banned> { 157.247.226.123 157.247.226.124 157.247.226.125 }
 ```
 
+Add the anchor to the ruleset:
 ```command
 sudo vim /etc/pf.conf
 ```
 
-Add the anchor:
+Add the following:
 ```
 *--snip--*
 set skip on lo0
 scrub in
 antispoof quick for $ext_if
-anchor non_routes_anchor
-load anchor non_routes_anchor from "/etc/non_routes"
+block in quick on $ext_if from <rfc6890> 
+block return out quick on egress to <rfc6890>
+block in quick on $ext_if from <banned> 
+block return out quick on egress to <banned>
+anchor banned_anchor
+load anchor banned_anchor from "/etc/banned"
 block all
 *--snip--*
 ```
@@ -342,18 +339,6 @@ block all
 Load the ruleset:
 ```command
 sudo pfctl -f /etc/pf.conf
-```
-
-Reboot the droplet:
-```command
-sudo reboot
-```
-
-The connection will be dropped. Give it a few minutes to update.
-
-SSH back into the droplet:
-```command
-ssh sudouser@XXX.XXX.XX.XXX
 ```
 
 Verify the anchor is running:
@@ -366,13 +351,13 @@ View the anchor in the ruleset:
 sudo pfctl -s rules
 ```
 
-Another intelligent feature of *anchors* is that they allow us to add rules on-the-fly without having to reload the ruleset. This can be useful for testing, quick-fixes, emergencies, etc. For example, if an internal host is acting strange and we want to block it, we can place an anchor below the `block all` rule, and block it from the command-line. Once the *anchor* is in place we can reuse it anytime. Let's start over by reloading the entire base ruleset from step 7 before continuing.
+Another intelligent feature of *anchors* is that they allow us to add rules on-the-fly without having to reload the ruleset. This can be useful for testing, quick-fixes, emergencies, etc. For example, let's say an internal host is acting strange and we want to block it. We can add another anchor to our ruleset and block it from the command-line. We'll name the anchor `rogue_hosts`. Once the anchor is in place we can reuse it anytime. 
 
 ```command
 sudo vim /etc/pf.conf
 ```
 
-Now add an anchor below the `block all` rule:
+Add the anchor `rogue_hosts`:
 ```
 *--snip--*
 set skip on lo0
@@ -380,8 +365,12 @@ scrub in
 antispoof quick for $ext_if
 block in quick on $ext_if from <rfc6890> 
 block return out quick on egress to <rfc6890>
-block all
+block in quick on $ext_if from <banned> 
+block return out quick on egress to <banned>
+anchor banned_anchor
+load anchor banned_anchor from "/etc/banned"
 anchor rogue_hosts
+block all
 *--snip--*
 ```
 
@@ -389,17 +378,6 @@ Reload the ruleset:
 ```command
 sudo pfctl -f /etc/pf.conf
 ```
-
-Reboot the droplet:
-```command
-sudo reboot
-```
-
-The connection will be dropped. Give it a few minutes to update.
-
-SSH back into the droplet:
-```command
-ssh sudouser@XXX.XXX.XX.XXX
 
 Verify the anchor is running:
 ```command
@@ -539,7 +517,7 @@ The last example highlights a powerful feature of `prio`, which is the tuple opt
 
 Our firewall is of little use if we cannot see what it is doing. Policy decisions in network security are highly dependent on packet analyses, which inevitably invlove examining log files. With [PF](https://www.freebsd.org/cgi/man.cgi?query=pf&apropos=0&sektion=0&manpath=FreeBSD+12.0-RELEASE+and+Ports&arch=default&format=html), logging occurs on a psuedo-device known as the *pflog interface*. Since it is an interface, various userland tools can be used to access its logs. 
 
-To create logs with [PF](https://www.freebsd.org/cgi/man.cgi?query=pf&apropos=0&sektion=0&manpath=FreeBSD+12.0-RELEASE+and+Ports&arch=default&format=html), we add the `log` keyword to the rules we want to log. [PF](https://www.freebsd.org/cgi/man.cgi?query=pf&apropos=0&sektion=0&manpath=FreeBSD+12.0-RELEASE+and+Ports&arch=default&format=html) then makes copies of the packet headers that match those rules, and writes them to `/var/log/pflog` in *binary format*. Rarely ever do we need to log everything. That would become unwieldy, and would also waste memory. When creating log files we start with what's most important to us, and expand as needed.
+To create logs with [PF](https://www.freebsd.org/cgi/man.cgi?query=pf&apropos=0&sektion=0&manpath=FreeBSD+12.0-RELEASE+and+Ports&arch=default&format=html), we add the `log` keyword to any of our filtering rules. [PF](https://www.freebsd.org/cgi/man.cgi?query=pf&apropos=0&sektion=0&manpath=FreeBSD+12.0-RELEASE+and+Ports&arch=default&format=html) then makes copies of the packet headers that match those rules, and writes them to `/var/log/pflog` in *binary format*. Rarely ever do we need to log everything. That would become unwieldy, and would also waste memory. When creating log files we start with what's most important to us, and expand as needed.
 
 ### Create additional log interfaces
 
@@ -547,7 +525,7 @@ If multiple log interfaces are needed we can create them with a `/etc/hostname` 
 
 Create a `pflog1` interface:
 ```command
-sudo vim `/etc/hostname.pflog1` 
+sudo vim /etc/hostname.pflog1 
 ```
 
 Add the following:
@@ -589,7 +567,7 @@ The *pftop utility* is an excellent tool for quickly viewing active states and r
 
 Install `pftop`:
 ```command
-sudo pkg istall pftop
+sudo pkg install pftop
 ```
 
 Run `pftop`:
@@ -626,7 +604,7 @@ Add the following:
 collect 1 = interface "vtnet0" pass packets in ipv4 diff
 collect 2 = interface "vtnet0" block packets in ipv4 diff
 
-image "/home/myuser/pfstat.jpg" {
+image "/home/sudouser/pfstat.jpg" {
         from 7 days to now
         width 300 height 200
 	left
@@ -648,7 +626,11 @@ Add the following entries:
 0	0	1	*	*	/usr/local/bin/pfstat -t 30:180
 ```
 
-The database should now exist at `/var/db/pfstat.db`
+The database should now exist at `/var/db/pfstat.db`. Give it a couple of seconds to enable.
+
+```command
+ls -l /var/db/pfstat.db
+```
 
 The above entries will populate the database continuously. Since we have automated the process, the database will grow continuously, which is why we added a second rule with the `-t` flag to periodically clean it out. The additional values represent days. The first value represents *uncompressed images*, and the second represents *compressed images*. The above rule deletes *uncompressed images* that are 30 days old, and *compressed images* that are 180 days old. *Uncompressed images* are for high resolution images, and should be removed first to keep the size of the database manageable. See `man pfstat`. 
 
@@ -657,14 +639,19 @@ Generate a graph image:
 sudo pfstat -p
 ```
 
-*Xorg* is required to view graphical images. Since we have no intention of installing *Xorg*, or even forwarding *X sessions* to our droplet, we will copy the image from the droplet to our remote workstation using `scp`.
+There should now be a `pfstat.jpg` in your home directory. *Xorg* is required to view graphical images. Since we have no intention of installing *Xorg*, or even forwarding *X sessions* to our droplet, we will copy the image from the droplet to our remote workstation using `scp`.
+
+Exit out of the droplet:
+```command
+exit
+```
 
 Copy the image to a remote workstation:
 ```command 
 sudo scp myuser@XXX.XXX.XX.XX:pfstat.jpg /home/myuser
 ```
 
-As mentioned, there's a strong chance that nothing will appear on the graph because we're using a fresh droplet. We can try flooding the server with *ping* from our local workstation to generate mass quantities of packets. The server will block the *ping flood*, which should appear on the graph image.
+As mentioned, chances are that nothing will appear on the graph because we're on a fresh droplet that has no data. We can try flooding the server with *ping* from our local workstation to generate mass quantities of packets. The server will block the *ping flood* packets, and that should generate enough data to appear on a graph.
 
 Flood the server with ping:
 ```command
@@ -678,10 +665,9 @@ sudo scp myuser@XXX.XXX.XX.XX:pfstat.jpg /home/myuser
 
 The image should now show some graphical data.
 
-
 ## Conclusion
 
-We now have a portable base ruleset that can serve as a formidable starting point for all new droplets. Refer to the sample rulesets below, make copies of them and tuck them away somewhere safe. Do not blindly copy them without analyzing your exact needs. They are intended to be building blocks that can be molded into any scenario. Hopefully this tutorial was useful in getting you up to speed with [PF](https://www.freebsd.org/cgi/man.cgi?query=pf&apropos=0&sektion=0&manpath=FreeBSD+12.0-RELEASE+and+Ports&arch=default&format=html), and hopefully you also picked up a few tips on Unix networking. See you in the next one!
+We now have a portable base ruleset that can serve as a formidable starting point for all new droplets. Refer to the sample rulesets below as a reference. Do not blindly copy them without analyzing your exact needs. Hopefully this tutorial was useful in getting you up to speed with [PF](https://www.freebsd.org/cgi/man.cgi?query=pf&apropos=0&sektion=0&manpath=FreeBSD+12.0-RELEASE+and+Ports&arch=default&format=html), and hopefully you picked up a few tips on Unix networking. See you in the next one!
 
 ### Sample ruleset 1 (identical to step 7)
 ```
