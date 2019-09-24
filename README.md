@@ -513,6 +513,11 @@ pass proto tcp to port { 80 443 } set prio (6,7)
 
 The last example highlights a powerful feature of `prio`, which is the tuple option. The first value prioritizes regular packets, and the second prioritizes *ACK* and/or *lowdelay* TOS packets. TCP connections send *acknowledgement (ACK)* packets which contain no *data payload*. By default, *ACK packets* wait in line with regular packets, which means they have the potential to needlessly clog up the system, and should therefore be processed quickly, with a higher priority than others. Packets may also arrive with a *lowdelay* set in their *type of service* (TOS) fields. Those packets should also be processed before others.
 
+Reload the ruleset:
+```command
+sudo pfctl -f /etc/pf.conf
+```
+
 ## Step 11 - Logging and Monitoring
 
 Our firewall is of little use if we cannot see what it is doing. Policy decisions in network security are highly dependent on packet analyses, which inevitably invlove examining log files. With [PF](https://www.freebsd.org/cgi/man.cgi?query=pf&apropos=0&sektion=0&manpath=FreeBSD+12.0-RELEASE+and+Ports&arch=default&format=html), logging occurs on a psuedo-device known as the *pflog interface*. Since it is an interface, various userland tools can be used to access its logs. 
@@ -626,7 +631,7 @@ Add the following entries:
 0	0	1	*	*	/usr/local/bin/pfstat -t 30:180
 ```
 
-The database should now exist at `/var/db/pfstat.db`. Give it a couple of seconds to enable.
+Give it a couple of seconds to activate. The database should now exist at `/var/db/pfstat.db`. 
 
 ```command
 ls -l /var/db/pfstat.db
@@ -639,7 +644,7 @@ Generate a graph image:
 sudo pfstat -p
 ```
 
-There should now be a `pfstat.jpg` in your home directory. *Xorg* is required to view graphical images. Since we have no intention of installing *Xorg*, or even forwarding *X sessions* to our droplet, we will copy the image from the droplet to our remote workstation using `scp`.
+There should now be a `pfstat.jpg` in your home directory, however, *Xorg* is required to view graphical images. Since we have no intention of installing *Xorg*, or even forwarding *X sessions* to our droplet, we will copy the image from the droplet to our remote workstation using `scp`.
 
 Exit out of the droplet:
 ```command
@@ -664,6 +669,27 @@ sudo scp myuser@XXX.XXX.XX.XX:pfstat.jpg /home/myuser
 ```
 
 The image should now show some graphical data.
+
+## Step 12 - Revert back to the base ruleset
+
+We introduced many features that we may not need at this point, including anchors, traffic shaping, blacklisting, and more. Before signing off let's revert back to our base ruleset.
+
+Reload the base ruleset:
+```command
+sudo vim /etc/pf.conf
+```
+
+Add the base ruleset.
+
+Reload the ruleset:
+```command
+sudo pfctl -f /etc/pf.conf
+```
+
+It never hurts to reboot:
+```command
+sudo reboot
+```
 
 ## Conclusion
 
