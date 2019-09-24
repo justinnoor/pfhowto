@@ -150,7 +150,7 @@ Test DNS by updating the *pkgs* repository:
 sudo pkg upgrade
 ```
 
-If any packages need to be upgraded, go ahead and do that. If all of these services are working, that means our ruleset is working and we can now proceed. 
+If any packages need to be upgraded, upgrade them. If all of these services are working, that means our ruleset is working and we can now proceed. 
 
 ## Step 6 - Complete the base ruleset
 
@@ -158,9 +158,13 @@ Here we will complete the base ruleset. Rules in [PF](https://www.freebsd.org/cg
 
 ### Incorporate macros and tables
 
-In our preliminary ruleset we hard coded all of the parameters into each rule, i.e., the port numbers. This will become unmanageable as our ruleset expands. For organizational purposes [PF](https://www.freebsd.org/cgi/man.cgi?query=pf&apropos=0&sektion=0&manpath=FreeBSD+12.0-RELEASE+and+Ports&arch=default&format=html) offers *macros*, *lists*, and *tables*. We already used *lists*, which were the port numbers inside of the curly brackets. We can also assign a *list*, or even a single value, to a variable using *macros*. Let's reorganize our parameters.
+In our preliminary ruleset we hard coded all of the parameters into each rule, i.e., the port numbers. This will become unmanageable as our ruleset expands. For organizational purposes [PF](https://www.freebsd.org/cgi/man.cgi?query=pf&apropos=0&sektion=0&manpath=FreeBSD+12.0-RELEASE+and+Ports&arch=default&format=html) offers *macros*, *lists*, and *tables*. We already used *lists*, which were the port numbers inside of the curly brackets. We can also assign a *list*, or even a single value, to a variable using *macros*. Let's move our parameters into macros at the top of the ruleset:
 
-Move our parameters into macros at the top of the ruleset:
+```command
+sudo vim /etc/pf.conf
+```
+
+Add the following:
 ```
 ext_if = "vtnet0"
 tcp_services= "{ 22 53 80 123 443 }"
@@ -253,7 +257,7 @@ pass out proto udp to port $udp_services
 pass inet proto icmp icmp-type $icmp4_messages
 ```
 
-Be sure that your `/etc/pf.conf` is identical to the ruleset above before continuing.
+Be sure that your `/etc/pf.conf` is identical to the base ruleset above before continuing.
 
 Take a test run:
 ```command
@@ -276,6 +280,8 @@ Load the ruleset:
 sudo pfctl -f /etc/pf.conf
 ```
 
+If there are no errors, we are good-to-go!
+
 Test internet connectivity:
 ```command
 ping 8.8.8.8
@@ -286,7 +292,7 @@ Test DNS by updating the `pkgs` repository:
 sudo pkg upgrade
 ```
 
-If there are any packages to update, go ahead and do that.
+If there are any packages to update, upgrade them.
 
 Reboot the droplet:
 ```command
@@ -304,7 +310,7 @@ Create a file named `/etc/non_routes`:
 sudo vim /etc/non_routes
 ```
 
-Add the following rules:
+Move the following code to `/etc/non_routes`:
 ```
 ext_if = "vtnet0"
 
@@ -315,6 +321,10 @@ table <rfc6890> { 0.0.0.0/8 10.0.0.0/8 100.64.0.0/10 127.0.0.0/8 169.254.0.0/16 
 
 block in quick on $ext_if from <rfc6890> 
 block return out quick on egress to <rfc6890>
+```
+
+```command
+sudo vim /etc/pf.conf
 ```
 
 Add the anchor:
@@ -329,7 +339,7 @@ block all
 *--snip--*
 ```
 
-Reload the ruleset:
+Load the ruleset:
 ```command
 sudo pfctl -f /etc/pf.conf
 ```
@@ -344,6 +354,7 @@ The connection will be dropped. Give it a few minutes to update.
 SSH back into the droplet:
 ```command
 ssh sudouser@XXX.XXX.XX.XXX
+```
 
 Verify the anchor is running:
 ```command
@@ -355,11 +366,13 @@ View the anchor in the ruleset:
 sudo pfctl -s rules
 ```
 
-Another intelligent feature of *anchors* is that they allow us to add rules on-the-fly without having to reload the ruleset. This can be useful for testing, quick-fixes, emergencies, etc. For example, if an internal host is acting strange and we want to block it, we can place an anchor below the `block all` rule, and block it from the command-line. Once the *anchor* is in place we can reuse it anytime.
+Another intelligent feature of *anchors* is that they allow us to add rules on-the-fly without having to reload the ruleset. This can be useful for testing, quick-fixes, emergencies, etc. For example, if an internal host is acting strange and we want to block it, we can place an anchor below the `block all` rule, and block it from the command-line. Once the *anchor* is in place we can reuse it anytime. Let's start over by reloading the entire base ruleset from step 7 before continuing.
 
-Reload the base ruleset from step 7.
+```command
+sudo vim /etc/pf.conf
+```
 
-Add an anchor below the `block all` rule:
+Now add an anchor below the `block all` rule:
 ```
 *--snip--*
 set skip on lo0
@@ -398,7 +411,7 @@ View the anchor in the ruleset:
 sudo pfctl -s rules
 ```
 
-Block a from the command-line:
+Now we add the rule that blocks the internal host:
 ```command
 sudo sh -c 'echo "block return out quick on egress from XXX.XXX.XX.XX" | pfctl -a rogue_hosts -f -'
 ```
@@ -421,7 +434,11 @@ Cryptography exploits, such as *brute force* or *key search attacks*, occur when
 
 ### Blacklisting IP addresses with the overload mechanism (optional)
 
-Create an overload table:
+```command
+sudo vim /etc/pf.conf
+```
+
+Add an overload table:
 ```
 table <blackhats> persist
 ```
@@ -491,6 +508,10 @@ By default, [PF](https://www.freebsd.org/cgi/man.cgi?query=pf&apropos=0&sektion=
 
 ### Prioritizing traffic with prio
 
+```command
+sudo vim /etc/pf.conf
+```
+
 Increase the priority of inbound SSH traffic:
 ```
 pass in proto tcp to port { 22 } set prio 4
@@ -512,13 +533,32 @@ Prioritize web traffic to 6, and *ACK* and *lowdelay* packets to 7:
 pass proto tcp to port { 80 443 } set prio (6,7)
 ```
 
-The last example highlights a powerful feature of *prio*, which is the tuple option. The first value prioritizes regular packets, and the second prioritizes *ACK* and/or *lowdelay* TOS packets. TCP connections send *acknowledgement (ACK)* packets which contain no *data payload*. By default, *ACK packets* wait in line with regular packets, which means they have the potential to needlessly clog up the system, and should therefore be processed quickly, with a higher priority than others. Packets may also arrive with a *lowdelay* set in their *type of service* (TOS) fields. Those packets should also be processed before others.
+The last example highlights a powerful feature of `prio`, which is the tuple option. The first value prioritizes regular packets, and the second prioritizes *ACK* and/or *lowdelay* TOS packets. TCP connections send *acknowledgement (ACK)* packets which contain no *data payload*. By default, *ACK packets* wait in line with regular packets, which means they have the potential to needlessly clog up the system, and should therefore be processed quickly, with a higher priority than others. Packets may also arrive with a *lowdelay* set in their *type of service* (TOS) fields. Those packets should also be processed before others.
 
-## Step 11 - Monitoring and logging
+## Step 11 - Logging and Monitoring
 
 Our firewall is of little use if we cannot see what it is doing. Policy decisions in network security are highly dependent on packet analyses, which inevitably invlove examining log files. With [PF](https://www.freebsd.org/cgi/man.cgi?query=pf&apropos=0&sektion=0&manpath=FreeBSD+12.0-RELEASE+and+Ports&arch=default&format=html), logging occurs on a psuedo-device known as the *pflog interface*. Since it is an interface, various userland tools can be used to access its logs. 
 
 To create logs with [PF](https://www.freebsd.org/cgi/man.cgi?query=pf&apropos=0&sektion=0&manpath=FreeBSD+12.0-RELEASE+and+Ports&arch=default&format=html), we add the `log` keyword to the rules we want to log. [PF](https://www.freebsd.org/cgi/man.cgi?query=pf&apropos=0&sektion=0&manpath=FreeBSD+12.0-RELEASE+and+Ports&arch=default&format=html) then makes copies of the packet headers that match those rules, and writes them to `/var/log/pflog` in *binary format*. Rarely ever do we need to log everything. That would become unwieldy, and would also waste memory. When creating log files we start with what's most important to us, and expand as needed.
+
+### Create additional log interfaces
+
+If multiple log interfaces are needed we can create them with a `/etc/hostname` file, just as we would with any other interface.
+
+Create a `pflog1` interface:
+```command
+sudo vim `/etc/hostname.pflog1` 
+```
+
+Add the following:
+```
+up
+``` 
+
+Enable it in `/etc/rc.conf`: 
+```command
+sudo sysrc pflog1_enable="YES"
+```
 
 ### Accessing log data with tcpdump
 
@@ -638,24 +678,6 @@ sudo scp myuser@XXX.XXX.XX.XX:pfstat.jpg /home/myuser
 
 The image should now show some graphical data.
 
-### Create additional log interfaces
-
-If multiple log interfaces are needed we can create them with a `/etc/hostname` file, just as we would with any other interface.
-
-Create a `pflog1` interface:
-```command
-sudo vim `/etc/hostname.pflog1` 
-```
-
-Add the following:
-```
-up
-``` 
-
-Enable it in `/etc/rc.conf`: 
-```command
-sudo sysrc pflog1_enable="YES"
-```
 
 ## Conclusion
 
@@ -687,7 +709,7 @@ pass inet proto icmp icmp-type $icmp4_messages
 
 ### Sample ruleset 2
 ```
-[label Web Server Ruleset]
+[label Simple Web Server Ruleset]
 ext_if = "vtnet0"
 tcp_services= "{ 22 53 123 }"
 udp_services= "{ 53 123 }"
