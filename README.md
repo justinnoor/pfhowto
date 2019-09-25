@@ -19,7 +19,7 @@ Create a standard 1G FreeBSD 12.0 droplet in the region of choice from the [cont
 
 ## Step 2 - Attach the droplet to a cloud-firewall
 
-Upon creating our droplet we have no firewall enabled, therefore we risk being insecurely exposed to the open internet. Attach the droplet to a [cloud-firewall](https://www.digitalocean.com/docs/networking/firewalls/quickstart) before doing anything else. Later, after enabling [PF](https://www.freebsd.org/cgi/man.cgi?query=pf&apropos=0&sektion=0&manpath=FreeBSD+12.0-RELEASE+and+Ports&arch=default&format=html), we will detach it from the [cloud-firewall](https://www.digitalocean.com/docs/networking/firewalls/quickstart).
+Upon creating our droplet we have no firewall enabled, therefore we risk being insecurely exposed to the open internet. Attach the droplet to a [cloud-firewall](https://www.digitalocean.com/docs/networking/firewalls/quickstart) before doing anything else. Later, after enabling [PF](https://www.freebsd.org/cgi/man.cgi?query=pf&apropos=0&sektion=0&manpath=FreeBSD+12.0-RELEASE+and+Ports&arch=default&format=html), we will detach the droplet from the [cloud-firewall](https://www.digitalocean.com/docs/networking/firewalls/quickstart).
 
 ## Step 3 - SSH into the droplet
 
@@ -47,7 +47,7 @@ block all
 
 This rule blocks all forms of traffic in all directions. It does not specify an `in` or `out` direction, therefore it defaults to both. The same logic applies to `pass` and `match` rules when no direction is given. 
 
-This rule is perfectly legitimate for a local workstation that needs to be completely insulated from the world, however, it is largely impractical, and will not work with a remote droplet. Can you guess why? The reason is because we did not permit any *SSH* traffic. If [PF](https://www.freebsd.org/cgi/man.cgi?query=pf&apropos=0&sektion=0&manpath=FreeBSD+12.0-RELEASE+and+Ports&arch=default&format=html) had been enabled we would have locked ourselves out of our droplet. This is something to always keep in mind with remote machines. Every administrator has probably done this at least once! Let's revise the previous rule.
+This rule is perfectly legitimate for a local workstation that needs to be completely insulated from the world. However, it is largely impractical, and will not work with a remote droplet. Can you guess why? The reason is because we did not permit any *SSH* traffic. If [PF](https://www.freebsd.org/cgi/man.cgi?query=pf&apropos=0&sektion=0&manpath=FreeBSD+12.0-RELEASE+and+Ports&arch=default&format=html) had been enabled we would have locked ourselves out of our droplet. This is something to always keep in mind with remote machines. Every administrator has probably done this at least once! Let's revise the previous rule.
 
 Revise the previous rule:
 ```
@@ -61,11 +61,11 @@ block all
 pass in proto tcp to port ssh
 ```
 
-For the sake of consistency we will use port numbers, unless there is a reason to do otherwise. There is a detailed list of protocols and their respective port numbers in the `/etc/services` file which you are highly encouraged to look at.
+For the sake of consistency we will use port numbers, unless there is a reason to do otherwise. There is a detailed list of protocols and their respective port numbers in the `/etc/services` file, which you are highly encouraged to look at.
 
 [PF](https://www.freebsd.org/cgi/man.cgi?query=pf&apropos=0&sektion=0&manpath=FreeBSD+12.0-RELEASE+and+Ports&arch=default&format=html) processes rules sequentially from top-to-bottom, therefore our ruleset initially blocks all traffic, but then passes it if the criteria on the next line is matched, which in this case is *SSH* traffic.
 
-We can now *SSH* into our droplet, but we are still blocking all forms of outgoing traffic. This will become problematic becuase we cannot access critical services from the internet, such as installing software, accurate time settings, etc.
+We can now *SSH* into our droplet, but we are still blocking all forms of outgoing traffic. This will become problematic because we cannot access critical services from the internet, such as software repositories, time servers, etc.
 
 Let's allow some outward traffic:
 ```
@@ -87,7 +87,7 @@ pass out proto udp to port { 53 123 }
 pass out inet proto icmp icmp-type { echoreq }
 ```
 
-We created a `set skip` rule on our loopback device because it does not need to filter traffic. We added a *tag* on our *SSH* rule which will mark packets with the string *"SSH"* if they pass this rule. Finally, we added a *pass out inet* rule for the *ICMP* messaging protocol, which allows us to use the [ping(8)](https://www.freebsd.org/cgi/man.cgi?query=ping&sektion=8&manpath=freebsd-release-ports) utility for troubleshooting purposes. The *inet* option represents the *IPv4* address family.
+We created a `set skip` rule on our loopback device because it does not need to filter traffic. We added a *tag* on our *SSH* rule which will mark packets with the string "SSH" if they pass this rule. Finally, we added a *pass out inet* rule for the *ICMP* messaging protocol, which allows us to use the [ping(8)](https://www.freebsd.org/cgi/man.cgi?query=ping&sektion=8&manpath=freebsd-release-ports) utility for troubleshooting purposes. The *inet* option represents the *IPv4* address family.
 
 *ICMP* is an often controversial protocol that is fraught with many assumptions. As long as it is approached with care there is no harm in using it. We just want to use [ping(8)](https://www.freebsd.org/cgi/man.cgi?query=ping&sektion=8&manpath=freebsd-release-ports) with a droplet, that's it. The [ping(8)](https://www.freebsd.org/cgi/man.cgi?query=ping&sektion=8&manpath=freebsd-release-ports) utility relies on [icmp(4)](https://www.freebsd.org/cgi/man.cgi?query=icmp&sektion=4&apropos=0&manpath=FreeBSD+12.0-RELEASE+and+Ports) *echo messages*. Therefore in our `pass out inet` rule we only permit messages of type *echoreq*. Every other type of message will be blocked in all directions. If we need more message types in the future, we can easily add them to our rule. You may have noticed that [PF](https://www.freebsd.org/cgi/man.cgi?query=pf&apropos=0&sektion=0&manpath=FreeBSD+12.0-RELEASE+and+Ports&arch=default&format=html) allowed us to incorporate these codes directly from the [icmp(4)](https://www.freebsd.org/cgi/man.cgi?query=icmp&sektion=4&apropos=0&manpath=FreeBSD+12.0-RELEASE+and+Ports) protocol. Yes it did! See `man icmp` for additional codes.
 
@@ -172,7 +172,7 @@ udp_services= "{ 53 123 }"
 icmp_messages= "{ echoreq }"
 ```
 
-Now we can call the variable names in our rules instead of hard coding the parameters, i.e., `$tcp_services`. 
+Now we can call the variable names in our rules instead of hard coding the parameters.
 
 Our previous filter rules now look like this:
 ```
@@ -215,7 +215,7 @@ Add antispoofing:
 antispoof quick for $ext_if
 ```
 
-We also introduced the `quick` keyword, which executes a rule without doing any further processing of the ruleset. This is desirable for handling false IP addresses because we want to drop those packets immediately, and have no reason to process the remainder of the ruleset.
+We also introduce the `quick` keyword, which executes a rule without doing any further processing of the ruleset. This is desirable for handling false IP addresses because we want to drop those packets immediately, and have no reason to process the remainder of the ruleset.
 
 ### Blocking non-routable IP addresses
 
@@ -512,7 +512,7 @@ Prioritize web traffic to 6, and *ACK* and *lowdelay TOS* packets to 7:
 pass proto tcp to port { 80 443 } set prio (6,7)
 ```
 
-The last example highlights a powerful feature of `prio`, which is the *tuple option*. The first value prioritizes regular packets, and the second value prioritizes *ACK* and/or *lowdelay TOS* packets. TCP connections send *acknowledgement* (ACK) packets that contain no *data payload*. By default, ACK packets have to wait in line with regular packets, which means they have the potential to needlessly clog up the system, and should therefore be processed quickly. Packets may also arrive with a *lowdelay* set in their *type of service* (TOS) fields. Those packets should also be processed before others.
+The last example highlights a powerful feature of `prio`, which is the *tuple option*. The first value prioritizes regular packets, and the second value prioritizes *ACK* and/or *lowdelay TOS* packets. TCP connections send *acknowledgement* (ACK) packets that contain no *data payload*. By default, ACK packets have to wait in line with regular packets, which means they have the potential to needlessly clog up the system, and should therefore be processed quickly. Packets may also arrive with a lowdelay set in their *type of service* (TOS) fields. Those packets should also be processed before others.
 
 Reload the ruleset:
 ```command
@@ -523,7 +523,7 @@ sudo pfctl -f /etc/pf.conf
 
 Our firewall is of little use if we cannot see what it is doing. Policy decisions in network security are highly dependent on packet analyses, which inevitably invlove examining log files. With [PF](https://www.freebsd.org/cgi/man.cgi?query=pf&apropos=0&sektion=0&manpath=FreeBSD+12.0-RELEASE+and+Ports&arch=default&format=html), logging occurs on a psuedo-device known as the *pflog interface*. Since it is an interface, various userland tools can be used to access its logs. 
 
-To create logs with [PF](https://www.freebsd.org/cgi/man.cgi?query=pf&apropos=0&sektion=0&manpath=FreeBSD+12.0-RELEASE+and+Ports&arch=default&format=html), we add the `log` keyword to any of our filtering rules. [PF](https://www.freebsd.org/cgi/man.cgi?query=pf&apropos=0&sektion=0&manpath=FreeBSD+12.0-RELEASE+and+Ports&arch=default&format=html) then makes copies of the packet headers that match those rules, and writes them to `/var/log/pflog` in *binary format*. The `log` keyword was already added to our SSH rule in the base ruleset from step 7. Rarely ever do we need to log everything. That would become unwieldy, and would also waste memory. When creating log files we start with what's most important to us, and expand as needed.
+To create logs with [PF](https://www.freebsd.org/cgi/man.cgi?query=pf&apropos=0&sektion=0&manpath=FreeBSD+12.0-RELEASE+and+Ports&arch=default&format=html), we add the `log` keyword to any of our filtering rules. [PF](https://www.freebsd.org/cgi/man.cgi?query=pf&apropos=0&sektion=0&manpath=FreeBSD+12.0-RELEASE+and+Ports&arch=default&format=html) then makes copies of the packet headers that match those rules, and writes them to `/var/log/pflog` in *binary format*. The `log` keyword was already added to our *SSH* rule in the base ruleset from step 7. Rarely ever do we need to log everything. That would become unwieldy, and would also waste memory. When creating log files we start with what's most important to us, and expand as needed.
 
 ### Create additional log interfaces
 
