@@ -4,7 +4,7 @@
 
 Networks are hostile places. Every organization will face this reality unless they are completely offline and have no internal threats. The firewall is arguably one of the most important lines of defense against cyber attacks. The ability to configure a firewall from scratch is an empowering skill that will enable the administrator to take control of their networks.
 
-In this tutorial we build a firewall from the ground up on a FreeBSD 12.0 droplet with [PF](https://www.freebsd.org/cgi/man.cgi?query=pf&apropos=0&sektion=0&manpath=FreeBSD+12.0-RELEASE+and+Ports&arch=default&format=html), a renown packet filtering tool that is maintained by the [OpenBSD](https://www.openbsd.org) project. [PF](https://www.freebsd.org/cgi/man.cgi?query=pf&apropos=0&sektion=0&manpath=FreeBSD+12.0-RELEASE+and+Ports&arch=default&format=html) is part of the FreeBSD base system, and is supported by a community of dedicated users. It is known for its simple-syntax, user-friendliness, and extensive power. [PF](https://www.freebsd.org/cgi/man.cgi?query=pf&apropos=0&sektion=0&manpath=FreeBSD+12.0-RELEASE+and+Ports&arch=default&format=html) is a stateful firewall by default that stores information about connections in a *state table*.
+In this tutorial we build a firewall from the ground up on a FreeBSD 12.0 droplet with [PF](https://www.freebsd.org/cgi/man.cgi?query=pf&apropos=0&sektion=0&manpath=FreeBSD+12.0-RELEASE+and+Ports&arch=default&format=html), a renown packet filtering tool that is authored by the [OpenBSD](https://www.openbsd.org) project. [PF](https://www.freebsd.org/cgi/man.cgi?query=pf&apropos=0&sektion=0&manpath=FreeBSD+12.0-RELEASE+and+Ports&arch=default&format=html) is part of the FreeBSD base system, and is supported by a community of dedicated users. It is known for its simple-syntax, user-friendliness, and extensive power. [PF](https://www.freebsd.org/cgi/man.cgi?query=pf&apropos=0&sektion=0&manpath=FreeBSD+12.0-RELEASE+and+Ports&arch=default&format=html) is a stateful firewall by default that stores information about connections in a *state table*.
 
 ## Prerequisites
 
@@ -15,7 +15,7 @@ In this tutorial we build a firewall from the ground up on a FreeBSD 12.0 drople
 
 ## Step 1 - Prepare the droplet
 
-We begin by spinning up a fresh droplet and performing some essential configuration tasks on it.
+We begin by spinning up a fresh droplet and performing some essential configuration tasks.
 
 ### Choose your droplet
 
@@ -44,7 +44,7 @@ Create `/etc/pf.conf`:
 sudo vim /etc/pf.conf
 ```
 
-[PF](https://www.freebsd.org/cgi/man.cgi?query=pf&apropos=0&sektion=0&manpath=FreeBSD+12.0-RELEASE+and+Ports&arch=default&format=html) filters packets according to three core actions: `block`, `pass`, and `match`. When combined with other options they form rules. An action is taken when a packet meets the criteria that we specify in those rules. As you may expect, `pass` and `block` will `pass` and `block` traffic. A `match` rule performs an action on a matching packet without passing or blocking it. For example we can perform *network address translation (NAT)* on a specific packet (a match) without actually moving it anywhere.
+[PF](https://www.freebsd.org/cgi/man.cgi?query=pf&apropos=0&sektion=0&manpath=FreeBSD+12.0-RELEASE+and+Ports&arch=default&format=html) filters packets according to three core actions: `block`, `pass`, and `match`. When combined with other options they form rules. An action is taken when a packet meets the criteria that we specify in those rules. As you may expect, `pass` and `block` will `pass` and `block` traffic. A `match` rule performs an action on a matching packet without passing or blocking it. For example we can perform *network address translation* (NAT) on a specific packet (a match) without actually moving it anywhere.
 
 Add the first rule to `/etc/pf.conf`:
 ```
@@ -53,7 +53,7 @@ block all
 
 This rule blocks all forms of traffic in all directions. It does not specify an `in` or `out` direction, therefore it defaults to both. The same logic applies to `pass` and `match` rules when no direction is given. 
 
-This rule is perfectly legitimate for a local workstation that needs to be completely insulated from the world. However, it is largely impractical, and will not work with a remote droplet. Can you guess why? The reason is because we did not permit any *SSH* traffic. If [PF](https://www.freebsd.org/cgi/man.cgi?query=pf&apropos=0&sektion=0&manpath=FreeBSD+12.0-RELEASE+and+Ports&arch=default&format=html) had been enabled we would have locked ourselves out of our droplet. This is something to always keep in mind with remote machines. Every administrator has probably done this at least once! Let's revise the previous rule.
+This rule is perfectly legitimate for a local workstation that needs to be completely insulated from the world. However, it is largely impractical, and will not work with a remote droplet. Can you guess why? The reason is because we did not permit any *SSH* traffic. If [PF](https://www.freebsd.org/cgi/man.cgi?query=pf&apropos=0&sektion=0&manpath=FreeBSD+12.0-RELEASE+and+Ports&arch=default&format=html) had been enabled we would have locked ourselves out of our droplet. This is something to always keep in mind with remote machines. Every administrator has probably done this at least once! Let's revise the previous rule to allow SSH access.
 
 Revise the previous rule:
 ```
@@ -95,7 +95,7 @@ pass out inet proto icmp icmp-type { echoreq }
 
 We created a `set skip` rule for our loopback device because it does not need to filter traffic. We added a *tag* on our *SSH* rule which will mark packets with the string "SSH" if they pass this rule. Finally, we added a *pass out inet* rule for the *ICMP* messaging protocol, which allows us to use the [ping(8)](https://www.freebsd.org/cgi/man.cgi?query=ping&sektion=8&manpath=freebsd-release-ports) utility for troubleshooting purposes. The *inet* option represents the *IPv4* address family.
 
-*ICMP* is an often controversial protocol that is fraught with many assumptions. As long as it is approached with care there is no harm in using it. We just want to use [ping(8)](https://www.freebsd.org/cgi/man.cgi?query=ping&sektion=8&manpath=freebsd-release-ports) with a droplet, that's it. The [ping(8)](https://www.freebsd.org/cgi/man.cgi?query=ping&sektion=8&manpath=freebsd-release-ports) utility relies on [icmp(4)](https://www.freebsd.org/cgi/man.cgi?query=icmp&sektion=4&apropos=0&manpath=FreeBSD+12.0-RELEASE+and+Ports) *echo messages*. Therefore in our `pass out inet` rule we only permit messages of type *echoreq*. Every other message type will be blocked in all directions. If we need more message types in the future, we can easily add them to our rule. You may have noticed that [PF](https://www.freebsd.org/cgi/man.cgi?query=pf&apropos=0&sektion=0&manpath=FreeBSD+12.0-RELEASE+and+Ports&arch=default&format=html) allowed us to incorporate these codes directly from the [icmp(4)](https://www.freebsd.org/cgi/man.cgi?query=icmp&sektion=4&apropos=0&manpath=FreeBSD+12.0-RELEASE+and+Ports) protocol. Yes it did! See `man icmp` for additional codes.
+*ICMP* is an often controversial protocol that is fraught with many assumptions. As long as it is approached with care there is no harm in using it. We just want to use [ping(8)](https://www.freebsd.org/cgi/man.cgi?query=ping&sektion=8&manpath=freebsd-release-ports) with a droplet, that's it. The [ping(8)](https://www.freebsd.org/cgi/man.cgi?query=ping&sektion=8&manpath=freebsd-release-ports) utility relies on [icmp(4)](https://www.freebsd.org/cgi/man.cgi?query=icmp&sektion=4&apropos=0&manpath=FreeBSD+12.0-RELEASE+and+Ports) *echo messages*. Therefore in our `pass out inet` rule we only permit messages of type *echoreq*. Every other message type will be blocked in all directions. If we need more message types in the future, we can easily add them to our rule. You may have noticed that [PF](https://www.freebsd.org/cgi/man.cgi?query=pf&apropos=0&sektion=0&manpath=FreeBSD+12.0-RELEASE+and+Ports&arch=default&format=html) allowed us to incorporate these codes directly from the [icmp(4)](https://www.freebsd.org/cgi/man.cgi?query=icmp&sektion=4&apropos=0&manpath=FreeBSD+12.0-RELEASE+and+Ports) protocol. Yes it did! See `man icmp` for additional message type codes.
 
 We now have a working ruleset that provides basic protection and functionality. Let's test it before we get too far. 
 
@@ -183,7 +183,7 @@ udp_services= "{ 53 123 }"
 icmp_messages= "{ echoreq }"
 ```
 
-Now we can call the variable names instead of the parameters in our filtering rules.
+Now we can call the variable names instead of hard coding the parameters into our filtering rules.
 
 Our filtering rules now look like this:
 ```
@@ -238,7 +238,7 @@ block in quick on egress from <rfc6890>
 block return out quick on egress to <rfc6890>
 ```
 
-Here we introduce the `return` option, which compliments our `block out` rule. This will drop the packets, and also send an *RST messages* to the host that tried to make these connections. Finally, we introduce the `egress` keyword, which automatically finds the default route. This is usually a cleaner method of finding the default route, especially on complex networks.
+Here we introduce the `return` option, which compliments our `block out` rule. This will drop the packets, and also send an *RST messages* to the host that tried to make these connections. Finally, we introduce the `egress` keyword, which automatically finds the *default route*. This is usually a cleaner method of finding the default route, especially on complex networks.
 
 That completes our base ruleset. Let's put all of the pieces together and review the final product before introducing additional topics.
 
@@ -274,12 +274,12 @@ Our base ruleset provides us with:
 
 - A collection of macros that define key services
 - Network hygiene policies to address packet fragmentation and illogical IP addresses
-- A *default deny* filtering structure that blocks everything, and only permits what we specify
+- A *default deny* filtering structure that blocks everything, and permits only what we specify
 - Inward *SSH* access 
 - Access to some critical services from the internet
 - Access to the [ping(8)](https://www.freebsd.org/cgi/man.cgi?query=ping&sektion=8&manpath=freebsd-release-ports) utility for troubleshooting purposes
 
-Be sure that your `/etc/pf.conf` is identical to the complete base ruleset above. After that we can test our packet filter.
+Be sure that your `/etc/pf.conf` is identical to the base ruleset above before continuing so that we can test what we've built.
 
 Take a test run:
 ```command
@@ -295,7 +295,7 @@ Use the verbose option:
 sudo pfctl -nvf /etc/pf.conf 
 ```
 
-The verbose option will print the rules in their full-form, which is what they actually look like. [PF](https://www.freebsd.org/cgi/man.cgi?query=pf&apropos=0&sektion=0&manpath=FreeBSD+12.0-RELEASE+and+Ports&arch=default&format=html) lets us write shortcut versions of rules for readability, which is how we have written them thus far. Viewing the rules in their full-form is a good way to learn the [PF](https://www.freebsd.org/cgi/man.cgi?query=pf&apropos=0&sektion=0&manpath=FreeBSD+12.0-RELEASE+and+Ports&arch=default&format=html) syntax.
+The verbose option prints the rules in their full-form. [PF](https://www.freebsd.org/cgi/man.cgi?query=pf&apropos=0&sektion=0&manpath=FreeBSD+12.0-RELEASE+and+Ports&arch=default&format=html) lets us write shortcut versions of rules for readability, which is how we have written them thus far. Viewing the rules in their full-form is a good way to learn the [PF](https://www.freebsd.org/cgi/man.cgi?query=pf&apropos=0&sektion=0&manpath=FreeBSD+12.0-RELEASE+and+Ports&arch=default&format=html) syntax.
 
 Load the ruleset:
 ```command
@@ -325,11 +325,11 @@ The connection will be dropped. Give it a few minutes to update.
 
 ## Step 6 - Introduce anchors (optional)
 
-In this step we introduc *anchors*, which are used for sourcing rules into the main ruleset, either on-the-fly with `pfctl`, or from an external text file. Anchors can contain rule snippets, tables, and even other anchors, or *nested anchors*. Let's demonstrate this by adding a table to an external file, and sourcing it into the ruleset with an anchor. Our table will include a group of internal hosts that we want to prevent from making any connections to the outside world.
+In this step we introduc *anchors*, which are used for sourcing rules into the main ruleset, either on-the-fly with `pfctl`, or from an external text file. Anchors can contain rule snippets, tables, and even other anchors, known as *nested anchors*. Let's demonstrate this by adding a table to an external file, and sourcing it into the ruleset with an anchor. Our table will include a group of internal hosts that we want to prevent from connecting to the outside world.
 
 Create a file named `/etc/punished`:
 ```command
-sudo vim /etc/banned
+sudo vim /etc/punished
 ```
 
 Add the following:
@@ -339,12 +339,12 @@ table <punished> { 192.168.47.1 192.168.47.2 192.168.47.3 }
 block return out quick on egress to <punished>
 ```
 
-Add the anchor to the ruleset:
+Open `/etc/pf.conf`:
 ```command
 sudo vim /etc/pf.conf
 ```
 
-Add the following:
+Add the anchor below the `block all` rule:
 ```
 *--snip--*
 block all
@@ -373,13 +373,14 @@ View the anchor in the ruleset:
 sudo pfctl -s rules
 ```
 
-Another intelligent feature of *anchors* is their ability to accept rules on-the-fly without having to reload the ruleset. This can be useful for testing, quick-fixes, emergencies, etc. For example, let's say an internal host is acting strange and we want to block it. We can add an anchor to our ruleset and block it manually from the command-line. We'll name the anchor `rogue_hosts`. Once the anchor is in place, we can use it anytime. 
+Another intelligent feature of *anchors* is their ability to accept rules on-the-fly without having to reload the ruleset. This can be useful for testing, quick-fixes, emergencies, etc. For example, let's say an internal host is acting strange and we want to block it from making outward connections. We can add an anchor to our ruleset and block it manually from the command-line. We'll name the anchor `rogue_hosts`. Once the anchor is in place, we can use it anytime. 
 
+Open `/etc/pf.conf`:
 ```command
 sudo vim /etc/pf.conf
 ```
 
-Add the anchor `rogue_hosts`:
+Add the anchor below the `block all` rule:
 ```
 *--snip--*
 block all
@@ -421,7 +422,7 @@ You should now understand the concept of *anchors*, and hopefully have some idea
 
 ## Step 7 - Defending against cryptography exploits (optional)
 
-In this step we introduce some defense strategies for dealing with cryptography exploits, such as *brute force* or *key search attacks*. Thankfully [PF](https://www.freebsd.org/cgi/man.cgi?query=pf&apropos=0&sektion=0&manpath=FreeBSD+12.0-RELEASE+and+Ports&arch=default&format=html) makes this easy for us. These types of exploits occur when the attacker systematically decrypts passwords to access a system. They usually succeed if the target machine has weak passwords. We strongly recommend public-key authentication on all droplets, however, even with these measures, attackers and netbots can still be a nuisance, and key search attacks are not impossible. 
+In this step we introduce some defense strategies for dealing with cryptography exploits, such as *brute force* or *key search attacks*. Thankfully [PF](https://www.freebsd.org/cgi/man.cgi?query=pf&apropos=0&sektion=0&manpath=FreeBSD+12.0-RELEASE+and+Ports&arch=default&format=html) makes this easy for us. These types of exploits occur when the attacker systematically decrypts passwords to access the system. They usually succeed if the target machine has weak passwords. We strongly recommend public-key authentication on all droplets, however, even with these measures, attackers and netbots can still be a nuisance, and key search attacks are not impossible. 
 
 Coupled with [PF](https://www.freebsd.org/cgi/man.cgi?query=pf&apropos=0&sektion=0&manpath=FreeBSD+12.0-RELEASE+and+Ports&arch=default&format=html)'s state monitoring capabilities, the *overload mechanism* enables us to detect and ban suspicious IP addesses from the system, based on their behavior. This is an adaptive and automated approach to handling unruly hosts, which can be more practical than hard coding IP addresses into a table.
 
@@ -448,11 +449,13 @@ Reload the ruleset:
 sudo pfctl -f /etc/pf.conf
 ```
 
-The `persist` keyword allows us to maintain empty tables. Next we use some of [PF](https://www.freebsd.org/cgi/man.cgi?query=pf&apropos=0&sektion=0&manpath=FreeBSD+12.0-RELEASE+and+Ports&arch=default&format=html)'s `keep state` options as the criteria for the `overload` mechanism. The idea is to significantly reduce the frequency at which external hosts are allowed to make connections to our droplet. For example, if port 22 receives 100 failed logins in 10 seconds, it is likely a *brute force attack*, and the source IP address should be banned.
+The `persist` keyword allows us to maintain empty tables. Next we use some of [PF](https://www.freebsd.org/cgi/man.cgi?query=pf&apropos=0&sektion=0&manpath=FreeBSD+12.0-RELEASE+and+Ports&arch=default&format=html)'s `keep state` options as the criteria for the *overload mechanism*. The idea is to significantly reduce the frequency at which external hosts are allowed to make connections to our droplet. For example, if port 22 receives 100 failed logins in 10 seconds, it is likely a *brute force attack*, and the source IP address should be banned.
 
 The `max-src-conn 15` option permits only 15 simultaneous connections from a single host. The `max-src-conn-rate 3/1` option will only allow 3 new connections per second from a single host. If these options are exceeded, the `overload` mechanism adds the source address to the `<blackhats>` table, where it will remain until we remove it. Finally, the `flush global` option immediately drops the connection.
 
 We have enforced strict measures on our SSH traffic for good reason, however, these are not suitable for all services. Increased connections are not always attackers. They can be random web connections that were dynamically assigned IP addresses. Blocking them may or may not be the right solution, depending on the circumstances. Services that can afford liberal connection policies should not share the same `overload` mechanism with services that cannot.
+
+### Managing the overload table
 
 Over time the `<blackhats>` table will grow and should be periodically cleaned out. It is unlikely that an attacker will continue using the same IP address, so it is nonsensical to store it in the table for long periods of time. We can clear the table manually with `pfctl`, or automate the process with *cron*, FreeBSD's *job scheduler*.
 
@@ -496,32 +499,13 @@ Add the following:
 
 This *cron job* runs the `clear_overload.sh` script everyday at midnight, removing IP addresses that are 48 hours old from the *overload table* `<blackhats>`.
 
-We now have a mechanism in place that will safegaurd our *SSH* traffic. Notice how simple it is to defend ourselves against such a sophisticated method of intrusion. That is the essence of [PF](https://www.freebsd.org/cgi/man.cgi?query=pf&apropos=0&sektion=0&manpath=FreeBSD+12.0-RELEASE+and+Ports&arch=default&format=html).
+We now have a mechanism in place that will safegaurd our *SSH* traffic. Notice how simple it was to protect ourselves from such a disastrous form of intrusion. That is the essence of [PF](https://www.freebsd.org/cgi/man.cgi?query=pf&apropos=0&sektion=0&manpath=FreeBSD+12.0-RELEASE+and+Ports&arch=default&format=html).
 
 ## Step 8 - Logging and Monitoring
 
 In this step we introduce *logging* and *monitoring*. Our firewall is of little use if we cannot see what it is doing. Policy decisions in network security are highly dependent on packet analyses, which inevitably invlove examining log files. With [PF](https://www.freebsd.org/cgi/man.cgi?query=pf&apropos=0&sektion=0&manpath=FreeBSD+12.0-RELEASE+and+Ports&arch=default&format=html), logging occurs on a psuedo-device known as the *pflog interface*. Since it is an interface, various userland tools can be used to access its logs. 
 
-To create logs with [PF](https://www.freebsd.org/cgi/man.cgi?query=pf&apropos=0&sektion=0&manpath=FreeBSD+12.0-RELEASE+and+Ports&arch=default&format=html), we add the `log` keyword to any of our filtering rules. [PF](https://www.freebsd.org/cgi/man.cgi?query=pf&apropos=0&sektion=0&manpath=FreeBSD+12.0-RELEASE+and+Ports&arch=default&format=html) then makes copies of the packet headers that match those rules, and writes them to `/var/log/pflog` in *binary format*. The `log` keyword was already added to our *SSH* rule in the base ruleset at step 5. Rarely ever do we need to log everything. That would become unwieldy, and would also waste memory. When creating log files we start with what's most important to us, and expand as needed.
-
-### Create additional log interfaces
-
-If multiple log interfaces are needed we can create them with a `/etc/hostname` file, just as we would with any other interface.
-
-Create a `pflog1` interface:
-```command
-sudo vim /etc/hostname.pflog1 
-```
-
-Add the following:
-```
-up
-``` 
-
-Enable it in `/etc/rc.conf`: 
-```command
-sudo sysrc pflog1_enable="YES"
-```
+To create logs with [PF](https://www.freebsd.org/cgi/man.cgi?query=pf&apropos=0&sektion=0&manpath=FreeBSD+12.0-RELEASE+and+Ports&arch=default&format=html), we add the `log` keyword to any of our filtering rules. [PF](https://www.freebsd.org/cgi/man.cgi?query=pf&apropos=0&sektion=0&manpath=FreeBSD+12.0-RELEASE+and+Ports&arch=default&format=html) then makes copies of the packet headers that match those rules, and writes them to `/var/log/pflog` in *binary format*. The `log` keyword was already added to our *SSH* rule in the base ruleset at step 5. Rarely do we ever need to log everything. That would become unwieldy, and would also waste memory. When creating log files we start with what's most important to us, and expand as we need to.
 
 ### Accessing log data with tcpdump
 
@@ -572,7 +556,7 @@ udp   Out 157.245.171.59:4699   67.203.62.5:53           MULTIPLE:SINGLE       0
 
 Often times we need graphical representations of our packet filter to show clients, colleagues, or maybe the boss. The *pfstat utility* is a lightweight tool that is perfect for this. It populates a `/var/db/pfstat.db` database with data that is parsed from `/dev/pf`. We tell pfstat what to store in the database through a configuration file named `/usr/local/etc/pfstat.conf`. The database can be populated manually from the command-line, or automated with a *cron job*, which is what we will use. The data is then translated into graphs that are illustrated in either *jpg* or *png* image formats. 
 
-Unfortunately, with a single fresh droplet we might not have much data to work with, but we'll try our best! We'll make a simple graph that displays how many packets have been blocked or passed.
+Unfortunately, with a single fresh droplet we might not have much data to work with, but we'll try our best! We'll make a simple graph that displays how many packets have been blocked and passed.
 
 Install pfstat:
 ```command
@@ -606,13 +590,16 @@ sudo crontab -e
 
 Add the following entries:
 ```
-*	*	*	*	*	/usr/local/bin/pfstat -q
+# minute	hour	mday	month	wday	command
 
-0	0	1	*	*	/usr/local/bin/pfstat -t 30:180
+  *	        *	*	*	*	/usr/local/bin/pfstat -q
+
+  0	        0	1	*	*	/usr/local/bin/pfstat -t 30:180
 ```
 
 Give it a couple of seconds to activate. The database should now exist in `/var/db/pfstat.db`. 
 
+Check if `/var/db/pfstat.db` file exists:
 ```command
 ls -l /var/db/pfstat.db
 ```
@@ -638,11 +625,31 @@ sudo scp myuser@XXX.XXX.XX.XX:pfstat.jpg /home/myuser
 
 Find and view the image on your local workstation. As mentioned, there's a good chance that nothing will appear on the graph because we're using a fresh droplet with no data. If that's the case, give the database time to grow and keep checking. You could also try adding more log rules since we are only logging *SSH* connections in the base ruleset.
 
+
+### Create additional log interfaces
+
+If multiple log interfaces are needed we can create them with a `/etc/hostname` file, just as we would with any other interface.
+
+Create a `pflog1` interface:
+```command
+sudo vim /etc/hostname.pflog1 
+```
+
+Add the following:
+```
+up
+``` 
+
+Enable it in `/etc/rc.conf`: 
+```command
+sudo sysrc pflog1_enable="YES"
+```
+
 We now have the ability to see who is making connections to our droplet, and the types of connections that are being made. Hopefully you are starting to think about how you can implement a logging and monitoring workflow.
 
 ## Step 9 - Revert back to the base ruleset
 
-In this final step we quickly revert back to the base ruleset. Throughout this tutorial we introduced some advanced concepts that we probably don't need right away. We want to keep things as simple as possible, implementing advanced features as we need them. That said, let's reload the base ruleset before signing off.
+In this final step we quickly revert back to the base ruleset. Throughout this tutorial we've introduced some advanced concepts that we probably don't need right away. We want to keep things as simple as possible, implementing advanced features only as we need them. That said, let's reload the base ruleset before signing off.
 
 Reload the base ruleset:
 ```command
@@ -656,14 +663,16 @@ Reload the ruleset:
 sudo pfctl -f /etc/pf.conf
 ```
 
-It never hurts to reboot:
+Reboot the droplet:
 ```command
 sudo reboot
 ```
 
+The connection will be dropped. Give it a few minutes to update.
+
 ## Conclusion
 
-We now have a portable base ruleset that can serve as a formidable starting point for all of our new FreeBSD droplets. Tuck it way somewhere safe, make copies of it, and think about how you can tailor it to fit your needs. Refer to the sample rulesets below as a reference, and more importantly, the [pf.conf(5)](https://www.freebsd.org/cgi/man.cgi?query=pf.conf&apropos=0&sektion=0&manpath=FreeBSD+12.0-RELEASE+and+Ports&arch=default&format=html) man pages, which are the ultimate source of authority. Hopefully this tutorial was useful in getting you up to speed with [PF](https://www.freebsd.org/cgi/man.cgi?query=pf&apropos=0&sektion=0&manpath=FreeBSD+12.0-RELEASE+and+Ports&arch=default&format=html), and hopefully it provided a glimpse into the world of Unix networking and the *TCP/IP protocol*. See you in the next one!
+We now have a portable base ruleset that can serve as a formidable starting point for all of our new FreeBSD droplets. Tuck it way somewhere safe, make copies of it, and think about how you can tailor it to fit your needs. Refer to the sample rulesets below as a reference, and more importantly, the [pf.conf(5)](https://www.freebsd.org/cgi/man.cgi?query=pf.conf&apropos=0&sektion=0&manpath=FreeBSD+12.0-RELEASE+and+Ports&arch=default&format=html) man pages, which are the ultimate source of authority. Hopefully this tutorial was useful in getting you up to speed with [PF](https://www.freebsd.org/cgi/man.cgi?query=pf&apropos=0&sektion=0&manpath=FreeBSD+12.0-RELEASE+and+Ports&arch=default&format=html), and hopefully it gave you a glimpse into the world of Unix networking, and the *TCP/IP protocol*. See you in the next one!
 
 ### Sample ruleset 1 (identical to step 5)
 ```
